@@ -1,0 +1,43 @@
+# Backing services for AI Development Studio (ADS).
+#
+# Start the core stack:   docker compose up -d postgres qdrant
+# Include the graph DB:   docker compose --profile graph up -d
+#
+# Note: if the `docker compose` plugin is unavailable, install the legacy
+# binary and use `docker-compose` instead.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ads
+      POSTGRES_PASSWORD: ads
+      POSTGRES_DB: ads
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ads"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"   # REST/HTTP
+      - "6334:6334"   # gRPC
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+
+  neo4j:
+    image: neo4j:5
+    profiles: ["graph"]   # optional; only starts with --profile graph
+    environment:
+      NEO4J_AUTH: neo4j/ads-password
+    ports:
+      - "7474:7474"   # browser
+      - "7687:7687"   # bolt
+    volumes:
+      - ./neo4j_data:/data
