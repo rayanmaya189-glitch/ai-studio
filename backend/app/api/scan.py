@@ -7,11 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.graph.code_graph import build_code_graph
-from app.models import File, Project, Service
+from app.models import CodeGraphNode, File, Project, Service
 from app.scanner.scanner import scan_project
 from app.schemas import CodeGraphOut, ScanResult
 
 router = APIRouter(prefix="/scan", tags=["scan"])
+
+# Bound DB writes so a 500k-LOC scan doesn't try to insert a row per file.
+_MAX_FILE_INSERTS = 2_000
 
 
 @router.post("/{project_id}", response_model=ScanResult)
@@ -30,25 +33,40 @@ def run_scan(project_id: str, db: Session = Depends(get_db)) -> ScanResult:
         db.commit()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Replace previously-scanned file rows for this project.
+    # Replace previously-scanned rows for this project (files, services, graph).
     db.query(File).filter(File.project_id == project_id).delete()
-    for f in meta.files[:2_000]:  # cap inserts for the scaffold
+    db.query(Service).filter(Service.project_id == project_id).delete()
+    db.query(CodeGraphNode).filter(CodeGraphNode.project_id == project_id).delete()
+
+    for rec in meta.files[:_MAX_FILE_INSERTS]:
         db.add(
             File(
                 project_id=project_id,
-                path=f["path"],
-                language=f["language"],
-                size_bytes=f["size"],
+                path=rec.path,
+                language=rec.language,
+                size_bytes=rec.size,
             )
         )
 
-    # Seed a couple of illustrative services so the dashboard has data.
-    if not db.query(Service).filter(Service.project_id == project_id).count():
-        for name in ("Auth Service", "User Service"):
-            db.add(Service(project_id=project_id, name=name, health="unknown"))
+    # Persist the services the scanner actually detected (deployable units with
+    # a build marker), instead of the old hard-coded placeholders.
+    for svc in meta.services:
+        db.add(
+            Service(
+                project_id=project_id,
+                name=svc["name"],
+                language=svc.get("language"),
+                path=svc.get("path"),
+                health="unknown",
+            )
+        )
 
     project.project_metadata = meta.to_dict()
     project.scan_status = "completed"
+    db.commit()
+
+    # Build + persist the code graph from the fresh scan results.
+    build_code_graph(project_id, meta, db)
     db.commit()
 
     return ScanResult(project_id=project_id, status="completed", metadata=meta.to_dict())
@@ -68,4 +86,4 @@ def get_metadata(project_id: str, db: Session = Depends(get_db)) -> ScanResult:
 def get_code_graph(project_id: str, db: Session = Depends(get_db)) -> dict:
     if db.get(Project, project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    return build_code_graph(project_id)
+    return build_code_graph(project_id, None, db)

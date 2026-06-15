@@ -7,6 +7,8 @@ psycopg[binary]==3.2.3
 httpx==0.28.1
 qdrant-client==1.12.1
 python-dotenv==1.0.1
+tree-sitter==0.24.0
+tree-sitter-language-pack==1.8.0
 
 # dev/test
 pytest==8.3.4
