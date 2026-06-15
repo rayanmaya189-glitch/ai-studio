@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ChatPanel from "@/components/ChatPanel";
+import RagSearch from "@/components/RagSearch";
 import { api, type ScanResult } from "@/lib/api";
 
 export default function WorkspacePage() {
@@ -106,6 +107,13 @@ export default function WorkspacePage() {
             ))}
           </ul>
         </div>
+        <div>
+          <div className="mb-1 text-xs uppercase tracking-wide text-neutral-500">
+            Semantic search
+          </div>
+          <RagSearch projectId={projectId} />
+        </div>
+
         <div className="text-xs text-neutral-600">
           File tree + Monaco editor land in a later slice; this panel shows scan metadata for now.
         </div>

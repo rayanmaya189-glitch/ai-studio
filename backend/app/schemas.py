@@ -49,6 +49,26 @@ class CodeGraphOut(BaseModel):
     edges: list[GraphEdge]
 
 
+# ---- RAG (F3) ----
+class RagSearchRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+
+class RagHit(BaseModel):
+    source_path: str
+    score: float
+    text: str
+    start_line: int
+    end_line: int
+    symbols: list[str] = []
+
+
+class RagSearchResponse(BaseModel):
+    project_id: str
+    hits: list[RagHit]
+
+
 # ---- Chat (F10) ----
 class ChatRequest(BaseModel):
     project_id: str | None = None

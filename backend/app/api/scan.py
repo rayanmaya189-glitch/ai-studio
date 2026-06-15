@@ -5,9 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.graph.code_graph import build_code_graph
-from app.models import CodeGraphNode, File, Project, Service
+from app.models import CodeGraphNode, Embedding, File, Project, Service
+from app.rag.ingest import ingest_project
 from app.scanner.scanner import scan_project
 from app.schemas import CodeGraphOut, ScanResult
 
@@ -61,15 +63,42 @@ def run_scan(project_id: str, db: Session = Depends(get_db)) -> ScanResult:
             )
         )
 
-    project.project_metadata = meta.to_dict()
-    project.scan_status = "completed"
-    db.commit()
+    metadata = meta.to_dict()
 
     # Build + persist the code graph from the fresh scan results.
     build_code_graph(project_id, meta, db)
     db.commit()
 
-    return ScanResult(project_id=project_id, status="completed", metadata=meta.to_dict())
+    # Ingest the scanned files into the RAG vector store, then record pointer
+    # rows. Best-effort: a RAG failure must not fail the scan.
+    db.query(Embedding).filter(Embedding.project_id == project_id).delete()
+    try:
+        rel_paths = [rec.path for rec in meta.files]
+        rag = ingest_project(project_id, project.root_path, rel_paths)
+        metadata["rag"] = {
+            "files_ingested": rag.files_ingested,
+            "chunks": rag.chunks,
+            "backend": rag.backend,
+            "embedded": rag.embedded,
+        }
+        if rag.chunks:
+            db.add(
+                Embedding(
+                    project_id=project_id,
+                    source_path=f"<{rag.files_ingested} files>",
+                    chunk_index=rag.chunks,
+                    qdrant_point_id=rag.backend,
+                    model=settings.default_embed_model,
+                )
+            )
+    except Exception as exc:  # noqa: BLE001 - RAG is best-effort during scan
+        metadata["rag"] = {"error": str(exc)}
+
+    project.project_metadata = metadata
+    project.scan_status = "completed"
+    db.commit()
+
+    return ScanResult(project_id=project_id, status="completed", metadata=metadata)
 
 
 @router.get("/{project_id}/metadata", response_model=ScanResult)

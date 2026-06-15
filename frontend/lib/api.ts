@@ -64,6 +64,19 @@ export interface Agent {
   model: string;
 }
 
+export interface RagHit {
+  source_path: string;
+  score: number;
+  text: string;
+  start_line: number;
+  end_line: number;
+  symbols: string[];
+}
+export interface RagSearchResponse {
+  project_id: string;
+  hits: RagHit[];
+}
+
 export const api = {
   listProjects: () => http<Project[]>("/projects"),
   createProject: (name: string, root_path: string) =>
@@ -75,6 +88,11 @@ export const api = {
     http<ChatResponse>("/chat", {
       method: "POST",
       body: JSON.stringify({ message, project_id, model }),
+    }),
+  ragSearch: (projectId: string, query: string, limit = 5) =>
+    http<RagSearchResponse>(`/rag/${projectId}/search`, {
+      method: "POST",
+      body: JSON.stringify({ query, limit }),
     }),
   providers: () => http<ProviderInfo[]>("/providers"),
   agents: () => http<Agent[]>("/agents"),

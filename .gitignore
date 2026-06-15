@@ -26,6 +26,7 @@ yarn-error.log*
 pgdata/
 qdrant_storage/
 neo4j_data/
+vector_data/
 
 # OS / editor
 .DS_Store

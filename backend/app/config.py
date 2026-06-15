@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Backing services. SQLite default keeps the app runnable without Docker.
     database_url: str = "sqlite+pysqlite:///./ads.db"
     qdrant_url: str = "http://localhost:6333"
+    # When Qdrant is unreachable the RAG layer falls back to a local on-disk
+    # vector store rooted here, so retrieval works with zero external services.
+    local_vector_path: str = "./vector_data"
+    # How long to wait when probing/using Qdrant before falling back (seconds).
+    qdrant_timeout: float = 2.0
 
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
