@@ -31,7 +31,7 @@ def _make_repo(root: str) -> None:
     _write(f"{root}/auth/pyproject.toml", "[project]\nname='auth'\n")
     _write(
         f"{root}/auth/main.py",
-        'from fastapi import FastAPI\n'
+        "from fastapi import FastAPI\n"
         "app = FastAPI()\n"
         '@app.get("/login")\n'
         "def login():\n    return 1\n"

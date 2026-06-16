@@ -24,9 +24,7 @@ class StubProvider(LLMProvider):
         return ["echo", "echo-embed"]
 
     def chat(self, messages: list[ChatMessage], model: str) -> str:
-        last_user = next(
-            (m.content for m in reversed(messages) if m.role == "user"), ""
-        )
+        last_user = next((m.content for m in reversed(messages) if m.role == "user"), "")
         return (
             "[stub] No LLM provider is configured, so this is a canned reply. "
             f'You said: "{last_user}". Set a provider key in .env to get real '

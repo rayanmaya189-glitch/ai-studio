@@ -41,9 +41,11 @@ def test_local_store_search_orders_by_similarity(tmp_path):
     store.upsert(
         "p1",
         [[1.0, 0.0], [0.0, 1.0], [0.9, 0.1]],
-        [{"source_path": "a", "chunk_index": 0, "text": "a"},
-         {"source_path": "b", "chunk_index": 0, "text": "b"},
-         {"source_path": "c", "chunk_index": 0, "text": "c"}],
+        [
+            {"source_path": "a", "chunk_index": 0, "text": "a"},
+            {"source_path": "b", "chunk_index": 0, "text": "b"},
+            {"source_path": "c", "chunk_index": 0, "text": "c"},
+        ],
     )
     hits = store.search("p1", [1.0, 0.0], limit=2)
     assert len(hits) == 2

@@ -33,15 +33,11 @@ class VectorStore(ABC):
     backend: str = "base"
 
     @abstractmethod
-    def upsert(
-        self, project_id: str, vectors: list[list[float]], payloads: list[dict]
-    ) -> int:
+    def upsert(self, project_id: str, vectors: list[list[float]], payloads: list[dict]) -> int:
         """Store vectors+payloads for a project; return the count stored."""
 
     @abstractmethod
-    def search(
-        self, project_id: str, query_vector: list[float], limit: int
-    ) -> list[SearchHit]:
+    def search(self, project_id: str, query_vector: list[float], limit: int) -> list[SearchHit]:
         """Return the top-``limit`` hits by cosine similarity."""
 
     @abstractmethod
@@ -81,9 +77,7 @@ class LocalStore(VectorStore):
         except (OSError, json.JSONDecodeError):
             return []
 
-    def upsert(
-        self, project_id: str, vectors: list[list[float]], payloads: list[dict]
-    ) -> int:
+    def upsert(self, project_id: str, vectors: list[list[float]], payloads: list[dict]) -> int:
         records = self._load(project_id)
         for vec, payload in zip(vectors, payloads, strict=True):
             records.append({"vector": vec, "payload": payload})
@@ -91,9 +85,7 @@ class LocalStore(VectorStore):
             json.dump(records, fh)
         return len(vectors)
 
-    def search(
-        self, project_id: str, query_vector: list[float], limit: int
-    ) -> list[SearchHit]:
+    def search(self, project_id: str, query_vector: list[float], limit: int) -> list[SearchHit]:
         records = self._load(project_id)
         scored = [
             SearchHit(score=_cosine(query_vector, r["vector"]), payload=r["payload"])
@@ -131,9 +123,7 @@ class QdrantStore(VectorStore):
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
             )
 
-    def upsert(
-        self, project_id: str, vectors: list[list[float]], payloads: list[dict]
-    ) -> int:
+    def upsert(self, project_id: str, vectors: list[list[float]], payloads: list[dict]) -> int:
         from qdrant_client.models import PointStruct
 
         if not vectors:
@@ -150,9 +140,7 @@ class QdrantStore(VectorStore):
         self._client.upsert(collection_name=self._collection(project_id), points=points)
         return len(points)
 
-    def search(
-        self, project_id: str, query_vector: list[float], limit: int
-    ) -> list[SearchHit]:
+    def search(self, project_id: str, query_vector: list[float], limit: int) -> list[SearchHit]:
         try:
             res = self._client.query_points(
                 collection_name=self._collection(project_id),

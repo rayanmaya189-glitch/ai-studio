@@ -41,12 +41,8 @@ class Project(Base, TimestampMixin):
     services: Mapped[list[Service]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
-    files: Mapped[list[File]] = relationship(
-        back_populates="project", cascade="all, delete-orphan"
-    )
-    tasks: Mapped[list[Task]] = relationship(
-        back_populates="project", cascade="all, delete-orphan"
-    )
+    files: Mapped[list[File]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    tasks: Mapped[list[Task]] = relationship(back_populates="project", cascade="all, delete-orphan")
     conversations: Mapped[list[Conversation]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )

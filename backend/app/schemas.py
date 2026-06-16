@@ -100,6 +100,29 @@ class AgentOut(ORMModel):
     model: str
 
 
+# ---- Autonomous agent pipeline (F11) ----
+class AgentRunRequest(BaseModel):
+    goal: str
+    project_id: str | None = None  # when set, RAG context is retrieved + threaded
+    # Optional per-role "<provider>:<model>" overrides; unset roles use the
+    # models assigned in the Agent table (or the configured default).
+    model_map: dict[str, str] | None = None
+
+
+class StageOut(BaseModel):
+    role: str
+    provider: str
+    model: str
+    output: str
+    error: str | None = None
+
+
+class AgentRunResponse(BaseModel):
+    goal: str
+    stages: list[StageOut]
+    final_output: str
+
+
 # ---- Tasks (F9) ----
 class TaskCreate(BaseModel):
     title: str

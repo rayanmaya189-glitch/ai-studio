@@ -26,9 +26,26 @@ from app.rag.vector_store import get_vector_store
 _MAX_EMBED_BYTES = 500_000
 # Extensions worth embedding for retrieval: code plus docs/specs/infra text.
 _EMBED_EXTS = {
-    ".py", ".java", ".go", ".ts", ".tsx", ".js", ".jsx", ".cs", ".rs",
-    ".md", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".env",
-    ".sql", ".proto", ".dockerfile",
+    ".py",
+    ".java",
+    ".go",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".cs",
+    ".rs",
+    ".md",
+    ".rst",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".env",
+    ".sql",
+    ".proto",
+    ".dockerfile",
 }
 
 
@@ -78,14 +95,20 @@ def ingest_text(project_id: str, source_path: str, text: str) -> IngestResult:
     chunks = chunk_document(source_path, text)
     if not chunks:
         return IngestResult(
-            chunks=0, embedded=False, stored=False, backend="none",
+            chunks=0,
+            embedded=False,
+            stored=False,
+            backend="none",
             note="empty document",
         )
 
     vectors, embedded, _ = _embed([c.text for c in chunks])
     if not embedded:
         return IngestResult(
-            chunks=len(chunks), embedded=False, stored=False, backend="none",
+            chunks=len(chunks),
+            embedded=False,
+            stored=False,
+            backend="none",
             note="embedding unavailable; nothing stored",
         )
 
