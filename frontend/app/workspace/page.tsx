@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ChatPanel from "@/components/ChatPanel";
+import AgentPipeline from "@/components/AgentPipeline";
 import RagSearch from "@/components/RagSearch";
 import { api, type ScanResult } from "@/lib/api";
 
@@ -10,6 +11,7 @@ export default function WorkspacePage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
   const [meta, setMeta] = useState<ScanResult | null>(null);
+  const [tab, setTab] = useState<"chat" | "agents">("chat");
 
   useEffect(() => {
     const id = localStorage.getItem("ads.projectId");
@@ -119,9 +121,30 @@ export default function WorkspacePage() {
         </div>
       </aside>
 
-      {/* Chat */}
-      <div className="col-span-2">
-        <ChatPanel projectId={projectId} />
+      {/* Chat / autonomous pipeline */}
+      <div className="col-span-2 flex flex-col gap-2">
+        <div className="flex gap-1">
+          {(["chat", "agents"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`rounded px-3 py-1 text-xs font-medium capitalize ${
+                tab === t
+                  ? "bg-emerald-600 text-white"
+                  : "bg-neutral-900 text-neutral-400 ring-1 ring-neutral-800"
+              }`}
+            >
+              {t === "agents" ? "Agent pipeline" : "Chat"}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1">
+          {tab === "chat" ? (
+            <ChatPanel projectId={projectId} />
+          ) : (
+            <AgentPipeline projectId={projectId} />
+          )}
+        </div>
       </div>
     </div>
   );

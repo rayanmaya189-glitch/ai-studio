@@ -77,6 +77,19 @@ export interface RagSearchResponse {
   hits: RagHit[];
 }
 
+export interface AgentStage {
+  role: string;
+  provider: string;
+  model: string;
+  output: string;
+  error: string | null;
+}
+export interface AgentRunResponse {
+  goal: string;
+  stages: AgentStage[];
+  final_output: string;
+}
+
 export const api = {
   listProjects: () => http<Project[]>("/projects"),
   createProject: (name: string, root_path: string) =>
@@ -93,6 +106,11 @@ export const api = {
     http<RagSearchResponse>(`/rag/${projectId}/search`, {
       method: "POST",
       body: JSON.stringify({ query, limit }),
+    }),
+  runAgents: (goal: string, project_id?: string, model_map?: Record<string, string>) =>
+    http<AgentRunResponse>("/agents/run", {
+      method: "POST",
+      body: JSON.stringify({ goal, project_id, model_map }),
     }),
   providers: () => http<ProviderInfo[]>("/providers"),
   agents: () => http<Agent[]>("/agents"),
