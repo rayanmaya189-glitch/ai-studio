@@ -57,6 +57,24 @@ export interface ProviderInfo {
   models: string[];
 }
 
+export type OllamaMode = "localhost" | "cloud";
+
+export interface LLMProviderConfig {
+  provider_name: string; // "openrouter" | "openai" | "nim" | "ollama" | "anthropic"
+  enabled: boolean;
+
+  api_key: string | null;
+  base_url: string | null;
+
+  ollama_mode: OllamaMode;
+  ollama_local_base_url: string | null;
+  ollama_cloud_base_url: string | null;
+}
+
+export interface LLMConfig {
+  providers: LLMProviderConfig[];
+}
+
 export interface Agent {
   id: string;
   role: string;

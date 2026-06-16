@@ -182,3 +182,35 @@ class ProviderInfo(BaseModel):
     name: str
     available: bool
     models: list[str]
+
+
+# ---- LLM Config (DB-backed) ----
+from enum import Enum
+
+class ProviderName(str, Enum):
+    openrouter = "openrouter"
+    openai = "openai"
+    nim = "nim"
+    ollama = "ollama"
+    anthropic = "anthropic"
+
+
+class LLMProviderConfigIn(BaseModel):
+    provider_name: ProviderName
+    enabled: bool = False
+
+    api_key: str | None = None
+    base_url: str | None = None
+
+    # Ollama only
+    ollama_mode: str = "localhost"  # "localhost" | "cloud"
+    ollama_local_base_url: str | None = None
+    ollama_cloud_base_url: str | None = None
+
+
+class LLMConfigIn(BaseModel):
+    providers: list[LLMProviderConfigIn]
+
+
+class LLMConfigOut(BaseModel):
+    providers: list[LLMProviderConfigIn]

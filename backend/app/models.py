@@ -154,3 +154,27 @@ class Conversation(Base, TimestampMixin):
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     project: Mapped[Project] = relationship(back_populates="conversations")
+
+
+class LLMProviderConfig(Base, TimestampMixin):
+    """Persisted LLM provider configuration.
+
+    One row per provider name.
+    """
+
+    __tablename__ = "llm_provider_configs"
+
+    # provider name is the primary key (e.g. openai, openrouter, nim, ollama, anthropic)
+    provider_name: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+    # Whether the provider is enabled for use by the app/UI.
+    enabled: Mapped[bool] = mapped_column(Integer, default=0)
+
+    # Optional overrides.
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Ollama-specific mode + endpoints.
+    ollama_mode: Mapped[str] = mapped_column(String(16), default="localhost")
+    ollama_local_base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ollama_cloud_base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
