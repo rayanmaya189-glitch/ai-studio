@@ -77,6 +77,30 @@ export interface RagSearchResponse {
   hits: RagHit[];
 }
 
+export interface FileEdit {
+  path: string;
+  content: string;
+}
+
+export interface EditApplyResponse {
+  applied: number;
+  errors: string[];
+}
+
+export interface PullRequestGenerateRequest {
+  title: string;
+  summary_goal: string;
+  model?: string | null;
+}
+
+export interface PullRequestGenerateResponse {
+  project_id: string;
+  title: string;
+  provider: string;
+  model: string;
+  description: string;
+}
+
 export interface AgentStage {
   role: string;
   provider: string;
@@ -112,6 +136,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ goal, project_id, model_map }),
     }),
+  editApply: (projectId: string, edits: FileEdit[]) =>
+    http<EditApplyResponse>(`/edit/${projectId}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ edits }),
+    }),
+  generatePullRequest: (projectId: string, title: string, summary_goal: string, model?: string | null) =>
+    http<PullRequestGenerateResponse>(
+      `/projects/${projectId}/pull-requests/generate`,
+      {
+        method: "POST",
+        body: JSON.stringify({ title, summary_goal, model: model ?? null }),
+      },
+    ),
   providers: () => http<ProviderInfo[]>("/providers"),
   agents: () => http<Agent[]>("/agents"),
   setAgentModel: (agentId: string, model: string) =>

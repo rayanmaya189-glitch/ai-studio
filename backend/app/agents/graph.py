@@ -108,6 +108,8 @@ class PipelineResult:
 class _PipelineState(TypedDict):
     goal: str
     context: str
+    project_memory: str
+    agent_memory_map: dict[str, str]
     model_map: dict[str, str]
     stages: list[StageResult]
 
@@ -119,7 +121,21 @@ def _run_stage(role: str, state: _PipelineState) -> StageResult:
 
     messages = [ChatMessage(role="system", content=_ROLE_PROMPTS[role])]
     if state["context"]:
-        messages.append(ChatMessage(role="system", content=f"Project context:\n{state['context']}"))
+        messages.append(
+            ChatMessage(role="system", content=f"Project context:\n{state['context']}")
+        )
+    if state.get("project_memory"):
+        messages.append(
+            ChatMessage(
+                role="system",
+                content=f"Project memory (long-term notes):\n{state['project_memory']}",
+            )
+        )
+    agent_mem = state.get("agent_memory_map", {}).get(role)
+    if agent_mem:
+        messages.append(
+            ChatMessage(role="system", content=f"{role.title()} memory (notes):\n{agent_mem}")
+        )
     # Thread every prior stage's output in so each role builds on the last.
     for prior in state["stages"]:
         messages.append(
@@ -171,6 +187,8 @@ def run_agent_pipeline(
     goal: str,
     model_map: dict[str, str] | None = None,
     context: str | None = None,
+    project_memory: str | None = None,
+    agent_memory_map: dict[str, str] | None = None,
 ) -> PipelineResult:
     """Run the Planner->Architect->Coding->Review->Testing chain for one goal.
 
@@ -181,6 +199,8 @@ def run_agent_pipeline(
         {
             "goal": goal,
             "context": context or "",
+            "project_memory": project_memory or "",
+            "agent_memory_map": agent_memory_map or {},
             "model_map": model_map or {},
             "stages": [],
         }

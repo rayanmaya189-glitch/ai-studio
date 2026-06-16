@@ -5,13 +5,15 @@ import Link from "next/link";
 import ChatPanel from "@/components/ChatPanel";
 import AgentPipeline from "@/components/AgentPipeline";
 import RagSearch from "@/components/RagSearch";
+import CodeEditPanel from "@/components/CodeEditPanel";
+import PullRequestPanel from "@/components/PullRequestPanel";
 import { api, type ScanResult } from "@/lib/api";
 
 export default function WorkspacePage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
   const [meta, setMeta] = useState<ScanResult | null>(null);
-  const [tab, setTab] = useState<"chat" | "agents">("chat");
+  const [tab, setTab] = useState<"chat" | "agents" | "editpr">("chat");
 
   useEffect(() => {
     const id = localStorage.getItem("ads.projectId");
@@ -124,7 +126,7 @@ export default function WorkspacePage() {
       {/* Chat / autonomous pipeline */}
       <div className="col-span-2 flex flex-col gap-2">
         <div className="flex gap-1">
-          {(["chat", "agents"] as const).map((t) => (
+          {(["chat", "agents", "editpr"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -134,15 +136,24 @@ export default function WorkspacePage() {
                   : "bg-neutral-900 text-neutral-400 ring-1 ring-neutral-800"
               }`}
             >
-              {t === "agents" ? "Agent pipeline" : "Chat"}
+              {t === "agents" ? "Agent pipeline" : t === "editpr" ? "Edit / PR" : "Chat"}
             </button>
           ))}
         </div>
         <div className="min-h-0 flex-1">
           {tab === "chat" ? (
             <ChatPanel projectId={projectId} />
-          ) : (
+          ) : tab === "agents" ? (
             <AgentPipeline projectId={projectId} />
+          ) : (
+            <div className="grid h-full grid-cols-1 gap-2 md:grid-cols-2">
+              <div className="min-h-0">
+                <CodeEditPanel projectId={projectId} />
+              </div>
+              <div className="min-h-0">
+                <PullRequestPanel projectId={projectId} />
+              </div>
+            </div>
           )}
         </div>
       </div>

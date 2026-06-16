@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.graph import run_agent_pipeline
 from app.db import get_db
+from app.memory.store import get_agent_memory, get_project_memory
 from app.models import Agent
 from app.rag.ingest import build_context_block, retrieve
 from app.schemas import (
@@ -79,16 +80,48 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
     if payload.model_map:
         model_map.update(payload.model_map)
 
-    # Retrieve project context (best-effort — retrieval failures yield none).
+    # Retrieve RAG + memories (best-effort — failures yield none).
     context = None
+    project_memory = None
+    agent_memory_map: dict[str, str] = {}
+
     if payload.project_id:
+        # RAG context
         try:
             hits = retrieve(payload.project_id, payload.goal, limit=5)
             context = build_context_block(hits) or None
         except Exception:  # noqa: BLE001 - retrieval is best-effort
             context = None
 
-    result = run_agent_pipeline(payload.goal, model_map=model_map, context=context)
+        # Project memory
+        try:
+            pm = get_project_memory(db, payload.project_id)
+            if pm:
+                project_memory = "\n".join(
+                    f"[{m.category}] {m.title}\n{m.content}" for m in pm
+                )
+        except Exception:  # noqa: BLE001 - memory is best-effort
+            project_memory = None
+
+        # Agent memory per role
+        try:
+            agents_by_role = {a.role: a for a in db.scalars(select(Agent))}
+            for role, agent in agents_by_role.items():
+                mem = get_agent_memory(db, agent.id)
+                if mem:
+                    agent_memory_map[role] = "\n".join(
+                        f"[{m.kind}] {m.content}" for m in mem
+                    )
+        except Exception:  # noqa: BLE001 - memory is best-effort
+            agent_memory_map = {}
+
+    result = run_agent_pipeline(
+        payload.goal,
+        model_map=model_map,
+        context=context,
+        project_memory=project_memory,
+        agent_memory_map=agent_memory_map,
+    )
     return AgentRunResponse(
         goal=result.goal,
         stages=[StageOut(**vars(s)) for s in result.stages],

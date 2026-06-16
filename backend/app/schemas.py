@@ -147,6 +147,37 @@ class TaskOut(ORMModel):
 
 
 # ---- Providers ----
+# ---- Code editing (F12) ----
+class FileEdit(BaseModel):
+    path: str
+    content: str
+
+
+class EditApplyRequest(BaseModel):
+    edits: list[FileEdit]
+
+
+class EditApplyResponse(BaseModel):
+    applied: int
+    errors: list[str] = []
+
+
+# ---- Pull request generator (F13) ----
+class PullRequestGenerateRequest(BaseModel):
+    title: str
+    summary_goal: str
+    # Optional "<provider>:<model>" override for the PR-generation LLM call.
+    model: str | None = None
+
+
+class PullRequestGenerateResponse(BaseModel):
+    project_id: str
+    title: str
+    provider: str
+    model: str
+    description: str
+
+
 class ProviderInfo(BaseModel):
     name: str
     available: bool
