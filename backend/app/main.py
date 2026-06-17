@@ -11,6 +11,7 @@ from app.api import (
     agents,
     chat,
     edit,
+    fs,
     llm_config,
     memory,
     projects,
@@ -54,6 +55,7 @@ for router in (
     edit,
     pull_requests,
     memory,
+    fs,
 ):
     app.include_router(router.router)
 

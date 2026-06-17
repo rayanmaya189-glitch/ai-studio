@@ -57,6 +57,17 @@ class Agent(Base, TimestampMixin):
     model: Mapped[str] = mapped_column(String(128))  # "<provider>:<model>"
     config: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Agent scoping:
+    #   project_id NULL + kind "pipeline" -> the 7 global PRD pipeline roles.
+    #   project_id set  + kind "custom"   -> a project-specific agent/chatbot the
+    #                                        user created (own prompt + model).
+    project_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), default="pipeline")
+    description: Mapped[str] = mapped_column(Text, default="")
+    # System prompt that defines a custom agent's persona/behaviour. Pipeline
+    # roles use the built-in prompts in agents/graph.py and leave this blank.
+    system_prompt: Mapped[str] = mapped_column(Text, default="")
+
 
 class Task(Base, TimestampMixin):
     __tablename__ = "tasks"

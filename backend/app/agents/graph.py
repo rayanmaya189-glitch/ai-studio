@@ -53,6 +53,90 @@ def run_chat(message: str, model_ref: str | None, context: str | None = None) ->
     return ChatResult(reply=reply, provider=provider.name, model=model)
 
 
+# --- Project chatbot (grounded single agent) --------------------------------
+
+# Preamble that constrains a project chatbot to the supplied grounding so it
+# doesn't invent files, services, or APIs that aren't in the codebase.
+_GROUNDING_PREAMBLE = (
+    "You are a project-specific assistant for this exact codebase. Answer ONLY "
+    "from the grounding provided below (environment facts, retrieved code, and "
+    "memory). If the grounding does not contain the answer, say so plainly and "
+    "ask for the file or detail you need — do NOT guess or invent file names, "
+    "services, endpoints, or APIs. Prefer citing concrete paths from the "
+    "retrieved code."
+)
+
+
+@dataclass
+class GroundedChatResult:
+    reply: str
+    provider: str
+    model: str
+    used_context: bool
+    used_private_memory: bool
+    used_shared_memory: bool
+
+
+def run_grounded_chat(
+    message: str,
+    model_ref: str | None,
+    system_prompt: str | None = None,
+    env_facts: str | None = None,
+    context: str | None = None,
+    private_memory: str | None = None,
+    shared_memory: str | None = None,
+    history: list[ChatMessage] | None = None,
+) -> GroundedChatResult:
+    """Single project chatbot turn, grounded in the project's real environment.
+
+    The prompt is assembled from (in order): the anti-hallucination preamble,
+    the agent's own ``system_prompt`` (persona), the project's environment facts
+    (scan metadata), retrieved code (RAG ``context``), the agent's ``private``
+    memory, and the ``shared`` project memory both agents and chatbots write to.
+    """
+    registry = get_registry()
+    provider, model = registry.resolve(model_ref)
+
+    messages = [ChatMessage(role="system", content=_GROUNDING_PREAMBLE)]
+    if system_prompt and system_prompt.strip():
+        messages.append(ChatMessage(role="system", content=system_prompt.strip()))
+    if env_facts:
+        messages.append(
+            ChatMessage(role="system", content=f"Project environment (from scan):\n{env_facts}")
+        )
+    if context:
+        messages.append(
+            ChatMessage(role="system", content=f"Retrieved code (grounding):\n{context}")
+        )
+    if private_memory:
+        messages.append(
+            ChatMessage(role="system", content=f"Your private memory (notes):\n{private_memory}")
+        )
+    if shared_memory:
+        messages.append(
+            ChatMessage(
+                role="system",
+                content=(
+                    "Shared project memory (what other agents have done/decided):\n"
+                    f"{shared_memory}"
+                ),
+            )
+        )
+    for turn in history or []:
+        messages.append(turn)
+    messages.append(ChatMessage(role="user", content=message))
+
+    reply = provider.chat(messages, model)
+    return GroundedChatResult(
+        reply=reply,
+        provider=provider.name,
+        model=model,
+        used_context=bool(context),
+        used_private_memory=bool(private_memory),
+        used_shared_memory=bool(shared_memory),
+    )
+
+
 # --- Multi-agent pipeline (F11) ---------------------------------------------
 
 # The ordered stages and the system prompt that frames each role. The pipeline

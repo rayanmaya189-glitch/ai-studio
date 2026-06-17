@@ -16,6 +16,19 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface FsEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+}
+
+export interface FsListing {
+  path: string;
+  parent: string | null;
+  home: string;
+  entries: FsEntry[];
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -192,33 +205,103 @@ export interface ProjectMemory {
   created_at: string;
 }
 
+// ---- Project-scoped custom agents / chatbots ----
+export interface ProjectAgentOut {
+  id: string;
+  project_id: string | null;
+  kind: string;
+  role: string;
+  name: string;
+  model: string;
+  description: string;
+  system_prompt: string;
+}
+
+export interface ProjectAgentCreate {
+  name: string;
+  model?: string;
+  description?: string;
+  system_prompt?: string;
+}
+
+export interface ProjectAgentUpdate {
+  name?: string | null;
+  model?: string | null;
+  description?: string | null;
+  system_prompt?: string | null;
+}
+
+export interface AgentChatRequest {
+  message: string;
+  remember?: boolean;
+}
+
+export interface AgentChatResponse {
+  reply: string;
+  provider: string;
+  model: string;
+  used_context: boolean;
+  used_private_memory: boolean;
+  used_shared_memory: boolean;
+}
+
+export interface AgentPrivateMemoryEntry {
+  id: string;
+  kind: string;
+  content: string;
+  created_at: string;
+}
+
 export const api = {
+  // ---- Filesystem browser ----
+  fsList: (path?: string, show_hidden = false, include_files = true) => {
+    const params = new URLSearchParams();
+    if (path) params.set("path", path);
+    if (show_hidden) params.set("show_hidden", "true");
+    if (!include_files) params.set("include_files", "false");
+    return http<FsListing>(`/fs/list?${params.toString()}`);
+  },
+
+  // ---- Projects ----
   listProjects: () => http<Project[]>("/projects"),
   createProject: (name: string, root_path: string) =>
     http<Project>("/projects", { method: "POST", body: JSON.stringify({ name, root_path }) }),
+  getProject: (projectId: string) => http<Project>(`/projects/${projectId}`),
+
+  // ---- Scan ----
   scan: (projectId: string) => http<ScanResult>(`/scan/${projectId}`, { method: "POST" }),
   metadata: (projectId: string) => http<ScanResult>(`/scan/${projectId}/metadata`),
   graph: (projectId: string) => http<CodeGraph>(`/scan/${projectId}/graph`),
+
+  // ---- Chat ----
   chat: (message: string, project_id?: string, model?: string) =>
     http<ChatResponse>("/chat", {
       method: "POST",
       body: JSON.stringify({ message, project_id, model }),
     }),
+
+  // ---- RAG ----
   ragSearch: (projectId: string, query: string, limit = 5) =>
     http<RagSearchResponse>(`/rag/${projectId}/search`, {
       method: "POST",
       body: JSON.stringify({ query, limit }),
     }),
+
+  // ---- Agent pipeline ----
   runAgents: (goal: string, project_id?: string, model_map?: Record<string, string>) =>
     http<AgentRunResponse>("/agents/run", {
       method: "POST",
       body: JSON.stringify({ goal, project_id, model_map }),
     }),
+
+  // ---- Code editing ----
   editApply: (projectId: string, edits: FileEdit[]) =>
     http<EditApplyResponse>(`/edit/${projectId}/apply`, {
       method: "POST",
       body: JSON.stringify({ edits }),
     }),
+
+  // ---- Pull requests ----
   generatePullRequest: (projectId: string, title: string, summary_goal: string, model?: string | null) =>
     http<PullRequestGenerateResponse>(
       `/projects/${projectId}/pull-requests/generate`,
@@ -227,9 +310,11 @@ export const api = {
         body: JSON.stringify({ title, summary_goal, model: model ?? null }),
       },
     ),
+
+  // ---- Providers ----
   providers: () => http<ProviderInfo[]>("/providers"),
 
-  // LLM provider configuration (DB-backed, persistent across restarts).
+  // ---- LLM config ----
   getLlmConfig: () => http<LLMConfigOut>("/llm-config"),
   saveLlmConfig: (providers: LLMProviderConfigIn[]) =>
     http<LLMConfigOut>("/llm-config", {
@@ -237,6 +322,7 @@ export const api = {
       body: JSON.stringify({ providers }),
     }),
 
+  // ---- Pipeline agents ----
   agents: () => http<Agent[]>("/agents"),
   setAgentModel: (agentId: string, model: string) =>
     http<Agent>(`/agents/${agentId}/model`, {
@@ -244,7 +330,7 @@ export const api = {
       body: JSON.stringify({ model }),
     }),
 
-  // Tasks (F9)
+  // ---- Tasks ----
   listTasks: (projectId: string) => http<Task[]>(`/projects/${projectId}/tasks`),
   createTask: (projectId: string, title: string, description = "", assigned_agent_id?: string) =>
     http<Task>(`/projects/${projectId}/tasks`, {
@@ -261,7 +347,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  // Project memory (F8)
+  // ---- Project memory ----
   listProjectMemory: (projectId: string) =>
     http<ProjectMemory[]>(`/projects/${projectId}/memory`),
   createProjectMemory: (
@@ -275,11 +361,44 @@ export const api = {
       body: JSON.stringify({ category, title, content }),
     }),
 
-  // Agent memory (F7)
+  // ---- Agent memory ----
   listAgentMemory: (agentId: string) => http<AgentMemory[]>(`/agents/${agentId}/memory`),
   createAgentMemory: (agentId: string, content: string, kind = "note", project_id?: string) =>
     http<AgentMemory>(`/agents/${agentId}/memory`, {
       method: "POST",
       body: JSON.stringify({ content, kind, project_id }),
     }),
+
+  // ---- Project-specific custom agents / chatbots ----
+  listProjectAgents: (projectId: string) =>
+    http<ProjectAgentOut[]>(`/projects/${projectId}/agents`),
+  createProjectAgent: (projectId: string, payload: ProjectAgentCreate) =>
+    http<ProjectAgentOut>(`/projects/${projectId}/agents`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProjectAgent: (projectId: string, agentId: string, payload: ProjectAgentUpdate) =>
+    http<ProjectAgentOut>(`/projects/${projectId}/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteProjectAgent: (projectId: string, agentId: string) =>
+    http<{ deleted: string }>(`/projects/${projectId}/agents/${agentId}`, {
+      method: "DELETE",
+    }),
+  chatWithProjectAgent: (projectId: string, agentId: string, payload: AgentChatRequest) =>
+    http<AgentChatResponse>(`/projects/${projectId}/agents/${agentId}/chat`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listProjectAgentMemory: (projectId: string, agentId: string) =>
+    http<AgentPrivateMemoryEntry[]>(`/projects/${projectId}/agents/${agentId}/memory`),
+  shareAgentToProjectMemory: (projectId: string, agentId: string, title: string, content: string, category = "history") =>
+    http<{ id: string; category: string; title: string }>(
+      `/projects/${projectId}/agents/${agentId}/share`,
+      {
+        method: "POST",
+        body: JSON.stringify({ title, content, category }),
+      },
+    ),
 };

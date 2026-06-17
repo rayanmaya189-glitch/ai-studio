@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.graph import run_agent_pipeline
 from app.db import get_db
-from app.memory.store import get_agent_memory, get_project_memory
+from app.memory.store import add_project_memory, get_agent_memory, get_project_memory
 from app.models import Agent
 from app.rag.ingest import build_context_block, retrieve
 from app.schemas import (
@@ -40,17 +40,23 @@ _DEFAULT_AGENTS = [
 
 
 def _seed_if_empty(db: Session) -> None:
-    if db.scalar(select(Agent).limit(1)) is not None:
+    # Only the global pipeline roles (project_id IS NULL) are seeded; custom
+    # project agents are created explicitly by the user.
+    if db.scalar(select(Agent).where(Agent.project_id.is_(None)).limit(1)) is not None:
         return
     for role, name, model in _DEFAULT_AGENTS:
-        db.add(Agent(role=role, name=name, model=model))
+        db.add(Agent(role=role, name=name, model=model, kind="pipeline"))
     db.commit()
 
 
 @router.get("", response_model=list[AgentOut])
 def list_agents(db: Session = Depends(get_db)) -> list[Agent]:
     _seed_if_empty(db)
-    return list(db.scalars(select(Agent).order_by(Agent.role)))
+    return list(
+        db.scalars(
+            select(Agent).where(Agent.project_id.is_(None)).order_by(Agent.role)
+        )
+    )
 
 
 @router.put("/{agent_id}/model", response_model=AgentOut)
@@ -76,7 +82,8 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
     threaded into every stage's prompt.
     """
     _seed_if_empty(db)
-    model_map = {a.role: a.model for a in db.scalars(select(Agent))}
+    pipeline_agents = list(db.scalars(select(Agent).where(Agent.project_id.is_(None))))
+    model_map = {a.role: a.model for a in pipeline_agents}
     if payload.model_map:
         model_map.update(payload.model_map)
 
@@ -101,13 +108,14 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         except Exception:  # noqa: BLE001 - memory is best-effort
             project_memory = None
 
-        # Agent memory per role
+        # Agent memory per role (pipeline agents only)
         try:
-            agents_by_role = {a.role: a for a in db.scalars(select(Agent))}
-            for role, agent in agents_by_role.items():
+            for agent in pipeline_agents:
                 mem = get_agent_memory(db, agent.id)
                 if mem:
-                    agent_memory_map[role] = "\n".join(f"[{m.kind}] {m.content}" for m in mem)
+                    agent_memory_map[agent.role] = "\n".join(
+                        f"[{m.kind}] {m.content}" for m in mem
+                    )
         except Exception:  # noqa: BLE001 - memory is best-effort
             agent_memory_map = {}
 
@@ -118,6 +126,22 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         project_memory=project_memory,
         agent_memory_map=agent_memory_map,
     )
+
+    # Record the run in shared project memory (history) so project chatbots stay
+    # aware of what the pipeline planned/built — the "one shared place" both
+    # pipeline agents and custom chatbots read from. Best-effort.
+    if payload.project_id and result.final_output:
+        try:
+            add_project_memory(
+                db,
+                project_id=payload.project_id,
+                category="history",
+                title=f"Pipeline run: {payload.goal[:120]}",
+                content=result.final_output[:4000],
+            )
+        except Exception:  # noqa: BLE001 - recording is best-effort
+            pass
+
     return AgentRunResponse(
         goal=result.goal,
         stages=[StageOut(**vars(s)) for s in result.stages],

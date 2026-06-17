@@ -271,3 +271,61 @@ class LLMConfigIn(BaseModel):
 
 class LLMConfigOut(BaseModel):
     providers: list[LLMProviderConfigOut]
+
+
+# ---- Filesystem browser ----
+class FsEntry(BaseModel):
+    name: str
+    path: str
+    is_dir: bool
+
+
+class FsListing(BaseModel):
+    path: str
+    parent: str | None
+    home: str
+    entries: list[FsEntry]
+
+
+# ---- Project-scoped custom agents / chatbots ----
+class ProjectAgentCreate(BaseModel):
+    name: str
+    model: str = "stub:echo"  # "<provider>:<model>"
+    description: str = ""
+    system_prompt: str = ""
+
+
+class ProjectAgentUpdate(BaseModel):
+    name: str | None = None
+    model: str | None = None
+    description: str | None = None
+    system_prompt: str | None = None
+
+
+class ProjectAgentOut(ORMModel):
+    id: str
+    project_id: str | None
+    kind: str  # "pipeline" | "custom"
+    role: str
+    name: str
+    model: str
+    description: str
+    system_prompt: str
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+    # Persist the exchange to the agent's private memory + shared project memory
+    # so future turns (and other agents) stay aware. On by default.
+    remember: bool = True
+
+
+class AgentChatResponse(BaseModel):
+    reply: str
+    provider: str
+    model: str
+    # Which grounding sources were actually injected, so the UI can show the
+    # user *why* the answer is (or isn't) backed by the codebase.
+    used_context: bool
+    used_private_memory: bool
+    used_shared_memory: bool
