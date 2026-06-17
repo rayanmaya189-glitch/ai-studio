@@ -75,6 +75,8 @@ export default function LlmConfigPage() {
   const [err, setErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const [modelSearch, setModelSearch] = useState("");
+
   async function reload() {
     setLoading(true);
     setErr(null);
@@ -117,6 +119,12 @@ export default function LlmConfigPage() {
     }
     return Array.from(new Set(refs));
   }, [providers]);
+
+  const filteredAvailableModelRefs = useMemo(() => {
+    const q = modelSearch.trim().toLowerCase();
+    if (!q) return availableModelRefs;
+    return availableModelRefs.filter((ref) => ref.toLowerCase().includes(q));
+  }, [availableModelRefs, modelSearch]);
 
   async function saveProviders() {
     if (!drafts) return;
@@ -416,8 +424,31 @@ export default function LlmConfigPage() {
         {!agents ? (
           <p className="text-sm text-neutral-500">Loading agents...</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-neutral-800">
-            <table className="min-w-full text-sm">
+          <>
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-neutral-500" htmlFor="model-search">
+                Search models
+              </label>
+              <input
+                id="model-search"
+                value={modelSearch}
+                onChange={(e) => setModelSearch(e.target.value)}
+                placeholder="Type provider:model (e.g. openrouter:llama) ..."
+                className="w-full rounded-lg bg-neutral-950 px-3 py-2 text-sm outline-none ring-1 ring-neutral-800 transition-all focus:ring-2 focus:ring-emerald-600"
+              />
+              {modelSearch.trim() !== "" && (
+                <button
+                  type="button"
+                  onClick={() => setModelSearch("")}
+                  className="text-xs text-neutral-400 hover:text-neutral-200"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-neutral-800">
+              <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-800 bg-neutral-900/50">
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
@@ -437,7 +468,7 @@ export default function LlmConfigPage() {
                   .sort((a, b) => a.role.localeCompare(b.role))
                   .map((a, i) => {
                     const chosen = roleModelMap[a.role] ?? a.model;
-                    const options = Array.from(new Set([chosen, ...availableModelRefs]));
+                    const options = Array.from(new Set([chosen, ...filteredAvailableModelRefs]));
                     return (
                       <tr
                         key={a.id}
@@ -477,8 +508,9 @@ export default function LlmConfigPage() {
                     );
                   })}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+          </>
         )}
 
         <div className="flex items-center gap-3">

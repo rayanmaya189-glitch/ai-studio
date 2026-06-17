@@ -72,6 +72,8 @@ class RagSearchResponse(BaseModel):
 # ---- Chat (F10) ----
 class ChatRequest(BaseModel):
     project_id: str | None = None
+    # Multi-session chat grouping for the workspace chat UI.
+    session_id: str | None = None
     message: str
     model: str | None = None  # "<provider>:<model>" override
 
@@ -80,6 +82,18 @@ class ChatResponse(BaseModel):
     reply: str
     model: str
     provider: str
+
+
+class ChatHistoryItem(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+    model: str | None = None
+
+
+class ChatHistoryResponse(BaseModel):
+    project_id: str | None = None
+    session_id: str | None = None
+    messages: list[ChatHistoryItem] = []
 
 
 # ---- Agents (F5/F6) ----

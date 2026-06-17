@@ -15,11 +15,93 @@ export default function ChatPanel({ projectId }: { projectId: string | null }) {
   const [model, setModel] = useState<string>("");
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<string[]>([]);
+
   const endRef = useRef<HTMLDivElement>(null);
 
+  const sessionStorageKey = projectId ? `ads.chatSessionId:${projectId}` : null;
+
   useEffect(() => {
-    api.providers().then(setProviders).catch(() => {});
+    api.providers()
+      .then(setProviders)
+      .catch(() => {});
   }, []);
+
+  // Auto-select a default model so chat always sends a valid model ref.
+  useEffect(() => {
+    if (model) return;
+    if (!providers.length) return;
+
+    const first = providers
+      .filter((p) => p.available)
+      .flatMap((p) => p.models.map((m) => `${p.name}:${m}`))[0];
+
+    if (first) setModel(first);
+  }, [providers, model]);
+
+  // Load available sessions and select the active one (persisted in localStorage).
+  useEffect(() => {
+    if (!projectId || !sessionStorageKey) return;
+
+    api
+      .chatSessions(projectId)
+      .then((res) => {
+        const sessionList = (res.sessions ?? []).map((s) => s.session_id);
+        setSessions(sessionList);
+
+        const existing = localStorage.getItem(sessionStorageKey);
+        const hasExisting = existing && sessionList.includes(existing);
+
+        if (hasExisting) {
+          setSessionId(existing);
+          return;
+        }
+
+        // If we have sessions already, default to the first.
+        if (sessionList.length > 0) {
+          localStorage.setItem(sessionStorageKey, sessionList[0]);
+          setSessionId(sessionList[0]);
+          return;
+        }
+
+        // No sessions yet: create a new local session id (will appear after first chat POST).
+        const newId = crypto.randomUUID();
+        localStorage.setItem(sessionStorageKey, newId);
+        setSessionId(newId);
+      })
+      .catch(() => {
+        // Fallback: create/load from localStorage only.
+        const existing = localStorage.getItem(sessionStorageKey);
+        if (existing) setSessionId(existing);
+        else if (!sessionId) {
+          const newId = crypto.randomUUID();
+          localStorage.setItem(sessionStorageKey, newId);
+          setSessionId(newId);
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, sessionStorageKey]);
+
+  // Load history whenever the selected session changes.
+  useEffect(() => {
+    if (!projectId || !sessionId) return;
+
+    api
+      .chatHistory(projectId, sessionId)
+      .then((h) => {
+        const enriched: Msg[] = h.messages.map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.content,
+          meta: m.role === "assistant" && m.model ? m.model : undefined,
+        }));
+
+        setMessages(enriched);
+      })
+      .catch(() => {
+        // Do not wipe chat UI on transient history load errors.
+      });
+  }, [projectId, sessionId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -33,39 +115,109 @@ export default function ChatPanel({ projectId }: { projectId: string | null }) {
   async function send(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim()) return;
+    if (!projectId || !sessionId) return;
+
     const text = input;
     setInput("");
-    setMessages((m) => [...m, { role: "user", content: text }]);
+
+    // Optimistic UI: show the user message and an immediate assistant placeholder.
+    let placeholderIndex = -1;
+    setMessages((m) => {
+      const next = [
+        ...m,
+        { role: "user" as const, content: text },
+        { role: "assistant" as const, content: "Assistant is thinking…" },
+      ];
+      placeholderIndex = next.length - 1;
+      return next;
+    });
+
     setBusy(true);
     try {
-      const res = await api.chat(text, projectId ?? undefined, model || undefined);
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: res.reply, meta: `${res.provider}:${res.model}` },
-      ]);
+      const res = await api.chat(text, projectId ?? undefined, model || undefined, sessionId);
+
+      // Replace placeholder locally.
+      setMessages((m) => {
+        const idx =
+          placeholderIndex !== -1
+            ? placeholderIndex
+            : m.findIndex((x, i) => i === m.length - 1 && x.role === "assistant");
+        if (idx < 0)
+          return [...m, { role: "assistant", content: res.reply, meta: `${res.provider}:${res.model}` }];
+
+        const next = m.slice();
+        next[idx] = { role: "assistant", content: res.reply, meta: `${res.provider}:${res.model}` };
+        return next;
+      });
     } catch (err) {
-      setMessages((m) => [...m, { role: "assistant", content: `Error: ${err}` }]);
+      setMessages((m) => {
+        const idx =
+          placeholderIndex !== -1
+            ? placeholderIndex
+            : m.findIndex((x, i) => i === m.length - 1 && x.role === "assistant");
+        if (idx < 0) return [...m, { role: "assistant", content: `Error: ${err}` }];
+
+        const next = m.slice();
+        next[idx] = { role: "assistant", content: `Error: ${err}` };
+        return next;
+      });
     } finally {
       setBusy(false);
+      // Re-load to guarantee persisted history and correct ordering.
+      try {
+        const h = await api.chatHistory(projectId, sessionId);
+        const enriched: Msg[] = h.messages.map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.content,
+          meta: m.role === "assistant" && m.model ? m.model : undefined,
+        }));
+        setMessages(enriched);
+      } catch {
+        // ignore
+      }
     }
   }
 
   return (
     <div className="flex h-full flex-col rounded-lg border border-neutral-800">
-      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 px-4 py-2">
         <span className="text-sm font-medium">Workspace chat</span>
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="rounded bg-neutral-900 px-2 py-1 text-xs ring-1 ring-neutral-800"
-        >
-          <option value="">Default model</option>
-          {modelOptions.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={sessionId ?? ""}
+            onChange={(e) => {
+              const next = e.target.value || null;
+              if (projectId && next) {
+                localStorage.setItem(`ads.chatSessionId:${projectId}`, next);
+              }
+              setSessionId(next);
+            }}
+            className="rounded bg-neutral-900 px-2 py-1 text-xs ring-1 ring-neutral-800"
+            title="Chat session"
+            disabled={!projectId}
+          >
+            {sessions.length === 0 ? <option value="">New session</option> : null}
+            {sessions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="rounded bg-neutral-900 px-2 py-1 text-xs ring-1 ring-neutral-800"
+          >
+            <option value="">Default model</option>
+            {modelOptions.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
@@ -99,7 +251,8 @@ export default function ChatPanel({ projectId }: { projectId: string | null }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Message the agent…"
-          className="flex-1 rounded bg-neutral-900 px-3 py-2 text-sm outline-none ring-1 ring-neutral-800 focus:ring-emerald-600"
+          disabled={busy}
+          className="flex-1 rounded bg-neutral-900 px-3 py-2 text-sm outline-none ring-1 ring-neutral-800 focus:ring-emerald-600 disabled:opacity-70"
         />
         <button
           disabled={busy}

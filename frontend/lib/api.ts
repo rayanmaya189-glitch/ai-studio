@@ -44,6 +44,23 @@ export interface ChatResponse {
   provider: string;
 }
 
+export interface ChatHistoryItem {
+  role: string;
+  content: string;
+  model: string | null;
+}
+
+export interface ChatHistoryResponse {
+  project_id: string | null;
+  session_id: string | null;
+  messages: ChatHistoryItem[];
+}
+
+export interface ChatSessionsResponse {
+  project_id: string;
+  sessions: { session_id: string }[];
+}
+
 export interface ScanResult {
   project_id: string;
   status: string;
@@ -274,11 +291,26 @@ export const api = {
   graph: (projectId: string) => http<CodeGraph>(`/scan/${projectId}/graph`),
 
   // ---- Chat ----
-  chat: (message: string, project_id?: string, model?: string) =>
+  chat: (
+    message: string,
+    project_id?: string,
+    model?: string,
+    session_id?: string,
+  ) =>
     http<ChatResponse>("/chat", {
       method: "POST",
-      body: JSON.stringify({ message, project_id, model }),
+      body: JSON.stringify({ message, project_id, model, session_id }),
     }),
+
+  chatHistory: (project_id: string, session_id: string | null) =>
+    http<ChatHistoryResponse>(
+      `/chat/history?project_id=${encodeURIComponent(project_id)}&session_id=${encodeURIComponent(
+        session_id ?? "",
+      )}`,
+    ),
+
+  chatSessions: (project_id: string) =>
+    http<ChatSessionsResponse>(`/chat/sessions?project_id=${encodeURIComponent(project_id)}`),
 
   // ---- RAG ----
   ragSearch: (projectId: string, query: string, limit = 5) =>

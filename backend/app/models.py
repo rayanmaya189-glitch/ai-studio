@@ -159,6 +159,9 @@ class Conversation(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    # Multi-session conversation grouping for the workspace chat UI.
+    session_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     role: Mapped[str] = mapped_column(String(32))  # user | assistant | system
     content: Mapped[str] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)

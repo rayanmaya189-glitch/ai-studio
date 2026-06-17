@@ -23,11 +23,7 @@ from app.providers.openai_compat import OpenAICompatProvider
 # Curated default model lists for key-based providers (the live list is not
 # always enumerable without extra calls; these give the UI something to show).
 _OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "text-embedding-3-small"]
-_OPENROUTER_MODELS = [
-    "openai/gpt-4o",
-    "anthropic/claude-3.5-sonnet",
-    "meta-llama/llama-3.1-8b-instruct",
-]
+_OPENROUTER_MODELS: list[str] = []
 _NIM_MODELS = ["meta/llama-3.1-8b-instruct", "nvidia/nv-embed-v1"]
 _ANTHROPIC_MODELS = ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
 

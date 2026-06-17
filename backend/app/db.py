@@ -33,6 +33,10 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("agents", "kind", "VARCHAR(16) DEFAULT 'pipeline'"),
     ("agents", "description", "TEXT DEFAULT ''"),
     ("agents", "system_prompt", "TEXT DEFAULT ''"),
+    # Newer models added columns after the initial "create_all" dev schema.
+    # create_all never alters existing tables, so add additive columns idempotently.
+    ("llm_provider_configs", "enabled", "INTEGER DEFAULT 0"),
+    ("conversations", "session_id", "VARCHAR(32) DEFAULT NULL"),
 )
 
 
