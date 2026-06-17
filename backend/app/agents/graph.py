@@ -10,10 +10,9 @@ Two entry points:
   stage's output is threaded into the next stage's prompt alongside the
   project's RAG context.
 
-Both honor the zero-config invariant: ``registry.resolve`` falls back to the
-stub provider when a role's provider has no creds / its daemon is down, and a
-per-node ``provider.chat`` failure degrades to a recorded error string rather
-than aborting the whole run.
+``registry.resolve`` raises a descriptive ``ValueError`` when no provider is
+configured, and a per-node ``provider.chat`` failure degrades to a recorded
+error string rather than aborting the whole run.
 """
 
 from __future__ import annotations

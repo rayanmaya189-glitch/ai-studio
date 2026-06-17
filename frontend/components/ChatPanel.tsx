@@ -59,7 +59,7 @@ export default function ChatPanel({ projectId }: { projectId: string | null }) {
           onChange={(e) => setModel(e.target.value)}
           className="rounded bg-neutral-900 px-2 py-1 text-xs ring-1 ring-neutral-800"
         >
-          <option value="">default (stub:echo)</option>
+          <option value="">Default model</option>
           {modelOptions.map((opt) => (
             <option key={opt} value={opt}>
               {opt}
@@ -71,8 +71,7 @@ export default function ChatPanel({ projectId }: { projectId: string | null }) {
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages.length === 0 && (
           <p className="text-sm text-neutral-500">
-            Ask about the project: &ldquo;Analyze architecture&rdquo;, &ldquo;Generate
-            tests&rdquo;, &ldquo;Add tenant support&rdquo;.
+            Ask about the project. Configure your LLM providers in the LLM Config page.
           </p>
         )}
         {messages.map((m, i) => (

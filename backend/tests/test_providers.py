@@ -1,37 +1,52 @@
-"""Provider registry + stub provider behaviour."""
+"""Provider registry tests."""
 
 from __future__ import annotations
 
-from app.providers.base import ChatMessage
+import pytest
+from app.providers.base import LLMProvider, ChatMessage
 from app.providers.registry import ProviderRegistry
-from app.providers.stub import StubProvider
 
 
-def test_stub_always_available_and_echoes():
-    stub = StubProvider()
-    assert stub.available() is True
-    reply = stub.chat([ChatMessage(role="user", content="hello world")], "echo")
-    assert "hello world" in reply
+class TestProvider(LLMProvider):
+    """Minimal provider for tests — no network required."""
+    name = "test"
+
+    def available(self) -> bool:
+        return True
+
+    def list_models(self) -> list[str]:
+        return ["test-model"]
+
+    def chat(self, messages: list[ChatMessage], model: str) -> str:
+        last = next((m.content for m in reversed(messages) if m.role == "user"), "")
+        return f"[test:{model}] Echo: {last}"
+
+    def embed(self, texts: list[str], model: str) -> list[list[float]]:
+        return [[0.0] * 64 for _ in texts]
 
 
-def test_stub_embeddings_shape_and_determinism():
-    stub = StubProvider()
-    a = stub.embed(["abc"], "echo-embed")
-    b = stub.embed(["abc"], "echo-embed")
-    assert len(a) == 1 and len(a[0]) == 64
-    assert a == b  # deterministic
-
-
-def test_registry_includes_stub_and_resolves_default():
+def test_registry_empty_when_no_providers_configured():
     reg = ProviderRegistry()
-    assert "stub" in {p.name for p in reg.all()}
-    provider, model = reg.resolve(None)  # falls back to default_chat_model
-    assert provider.available()
+    # With no DB config rows (test DB is empty), no providers should be registered.
+    assert len(reg.all()) == 0
 
 
-def test_registry_falls_back_to_stub_for_unconfigured_provider():
+def test_registry_resolve_raises_for_missing_provider():
     reg = ProviderRegistry()
-    # anthropic has no key in the test env -> not available -> stub fallback.
-    provider, model = reg.resolve("anthropic:claude-opus-4-8")
-    assert provider.name == "stub"
-    assert model == "echo"
+    reg._register(TestProvider())
+    with pytest.raises(ValueError, match="not configured or enabled"):
+        reg.resolve("nonexistent:model")
+
+
+def test_resolve_works_with_registered_provider():
+    reg = ProviderRegistry()
+    reg._register(TestProvider())
+    provider, model = reg.resolve("test:test-model")
+    assert provider.name == "test"
+    assert model == "test-model"
+
+
+def test_registry_raises_for_invalid_ref_format():
+    reg = ProviderRegistry()
+    with pytest.raises(ValueError, match="Invalid model reference"):
+        reg.resolve("no-colon-here")

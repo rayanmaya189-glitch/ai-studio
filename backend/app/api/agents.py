@@ -1,10 +1,9 @@
 """F5/F6 - Agents and per-agent model assignment.
 
-On first request the seven PRD agent roles are seeded with sensible default
-models (referenced as "<provider>:<model>"). Each can then be reassigned to any
-provider/model independently.
+On first request the seven PRD agent roles are seeded without default models.
+Models must be assigned via the LLM Config page or the PUT endpoint. Each role
+can be independently reassigned to any provider/model.
 """
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,16 +25,19 @@ from app.schemas import (
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
-# (role, display name, default model ref). Defaults point at stub so a fresh
-# install works; swap to ollama:/anthropic:/etc. via the update endpoint.
-_DEFAULT_AGENTS = [
-    ("planner", "Planner Agent", "stub:echo"),
-    ("architect", "Architect Agent", "stub:echo"),
-    ("coding", "Coding Agent", "stub:echo"),
-    ("review", "Review Agent", "stub:echo"),
-    ("testing", "Testing Agent", "stub:echo"),
-    ("documentation", "Documentation Agent", "stub:echo"),
-    ("ocr", "OCR Agent", "stub:echo"),
+# (role, display name, default model ref). Models are assigned via the
+# LLM Config page or the PUT /agents/{id}/model endpoint.
+_DEFAULT_AGENTS: list[tuple[str, str, str]] = [
+    # (role, name, model_ref) — model_ref is set via the UI LLM Config page.
+    # Empty string means the provider registry will fall back to the first
+    # available provider's default model at runtime.
+    ("planner", "Planner Agent", ""),
+    ("architect", "Architect Agent", ""),
+    ("coding", "Coding Agent", ""),
+    ("review", "Review Agent", ""),
+    ("testing", "Testing Agent", ""),
+    ("documentation", "Documentation Agent", ""),
+    ("ocr", "OCR Agent", ""),
 ]
 
 

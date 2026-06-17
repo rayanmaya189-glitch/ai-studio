@@ -7,9 +7,30 @@ scored retrieval, project isolation, and re-ingest replacement.
 
 from __future__ import annotations
 
+from app.providers.registry import get_registry
+from app.providers.base import LLMProvider, ChatMessage
 from app.rag.chunking import chunk_document
 from app.rag.ingest import ingest_project, retrieve
 from app.rag.vector_store import LocalStore
+
+
+class _RagTestProvider(LLMProvider):
+    """Local test provider for RAG tests that create their own provider context."""
+    name = "test"
+    def available(self) -> bool:
+        return True
+    def list_models(self) -> list[str]:
+        return ["test-model"]
+    def chat(self, messages: list[ChatMessage], model: str) -> str:
+        return "ok"
+    def embed(self, texts: list[str], model: str) -> list[list[float]]:
+        return [[0.0] * 64 for _ in texts]
+
+
+def _ensure_test_provider():
+    reg = get_registry()
+    if "test" not in {p.name for p in reg.all()}:
+        reg._register(_RagTestProvider())
 
 
 def test_chunk_code_carries_symbols(tmp_path):
@@ -67,6 +88,7 @@ def test_local_store_project_isolation_and_delete(tmp_path):
 
 
 def test_ingest_project_then_retrieve(tmp_path, monkeypatch):
+    _ensure_test_provider()
     # Force the local store into an isolated dir regardless of Qdrant presence.
     from app.rag import ingest as ingest_mod
 
@@ -91,6 +113,7 @@ def test_ingest_project_then_retrieve(tmp_path, monkeypatch):
 
 
 def test_ingest_project_replaces_on_reingest(tmp_path, monkeypatch):
+    _ensure_test_provider()
     from app.rag import ingest as ingest_mod
 
     store = LocalStore(str(tmp_path / "vec"))

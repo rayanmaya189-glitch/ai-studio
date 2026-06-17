@@ -1,4 +1,4 @@
-"""End-to-end API smoke tests over the stub provider + SQLite."""
+"""End-to-end API smoke tests over the test provider + SQLite."""
 
 from __future__ import annotations
 
@@ -12,28 +12,26 @@ def test_health(client):
     assert resp.json()["status"] == "ok"
 
 
-def test_providers_endpoint_lists_stub(client):
+def test_providers_endpoint(client):
     resp = client.get("/providers")
     assert resp.status_code == 200
     body = resp.json()
     names = {p["name"] for p in body}
-    assert "stub" in names
-    stub = next(p for p in body if p["name"] == "stub")
-    assert stub["available"] is True
-    assert isinstance(stub["models"], list)
-    assert len(stub["models"]) > 0
+    assert "test" in names
+    test = next(p for p in body if p["name"] == "test")
+    assert test["available"] is True
+    assert isinstance(test["models"], list)
+    assert len(test["models"]) > 0
 
 
-def test_chat_works_with_no_provider_configured(client):
+def test_chat_works(client):
     resp = client.post("/chat", json={"message": "ping"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["provider"] == "stub"
     assert "ping" in body["reply"]
 
 
 def test_project_scan_flow(client):
-    # Create a project pointing at a temp dir with a couple of source files.
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, "main.py"), "w") as f:
             f.write("print('hi')\n")
@@ -58,12 +56,12 @@ def test_project_scan_flow(client):
 
 def test_agents_seed_and_reassign_model(client):
     agents = client.get("/agents").json()
-    assert len(agents) == 7  # seven PRD roles seeded
+    assert len(agents) == 7
     coding = next(a for a in agents if a["role"] == "coding")
 
-    updated = client.put(f"/agents/{coding['id']}/model", json={"model": "ollama:qwen2.5-coder"})
+    updated = client.put(f"/agents/{coding['id']}/model", json={"model": "test:test-model"})
     assert updated.status_code == 200
-    assert updated.json()["model"] == "ollama:qwen2.5-coder"
+    assert updated.json()["model"] == "test:test-model"
 
 
 def test_task_lifecycle(client):
@@ -111,7 +109,6 @@ def test_edit_apply_endpoint_blocks_path_traversal(client):
         assert resp.status_code == 200
         body = resp.json()
 
-        # Endpoint does best-effort apply across edits; this traversal should be blocked.
         assert body["applied"] == 0
         assert len(body["errors"]) == 1
         assert "Path traversal blocked" in body["errors"][0]
@@ -128,8 +125,6 @@ def test_pull_request_generate_endpoint_happy_path(client):
         body = resp.json()
         assert body["project_id"] == pid
         assert body["title"] == payload["title"]
-        assert body["provider"] == "stub"
-        assert body["model"] == "echo"
         assert isinstance(body["description"], str)
         assert len(body["description"]) > 0
 
@@ -167,7 +162,6 @@ def test_project_memory_rejects_unknown_category(client):
 
 
 def test_agent_memory_crud(client):
-    # Seed agents, then attach memory to the coding agent.
     agents = client.get("/agents").json()
     coding = next(a for a in agents if a["role"] == "coding")
 

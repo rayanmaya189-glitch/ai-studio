@@ -290,7 +290,7 @@ class FsListing(BaseModel):
 # ---- Project-scoped custom agents / chatbots ----
 class ProjectAgentCreate(BaseModel):
     name: str
-    model: str = "stub:echo"  # "<provider>:<model>"
+    model: str = ""  # "<provider>:<model>" — configured via LLM Config page
     description: str = ""
     system_prompt: str = ""
 

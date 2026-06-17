@@ -1,8 +1,8 @@
 """LLM provider interface.
 
 Every provider implements the same small surface so the rest of the app never
-branches on which backend is in use. Real implementations call out over HTTP;
-the `stub` provider needs no network and makes zero-config runs possible.
+branches on which backend is in use. Real implementations call out over HTTP.
+Providers are registered dynamically from the DB-backed config.
 """
 
 from __future__ import annotations

@@ -230,11 +230,7 @@ export default function ProjectAgentsPanel({
                 : "bg-neutral-900 ring-1 ring-neutral-800 hover:ring-neutral-600"
             }`}
           >
-            <div
-              className={`h-2 w-2 rounded-full ${
-                agent.model.includes("stub") ? "bg-yellow-500" : "bg-emerald-500"
-              }`}
-            />
+            <div className="h-2 w-2 rounded-full bg-emerald-500" />
             <span className="font-medium">{agent.name}</span>
             <span className="text-[10px] text-neutral-500">{agent.model}</span>
             <button
@@ -305,7 +301,7 @@ export default function ProjectAgentsPanel({
                 onChange={(e) => setNewModel(e.target.value)}
                 className="mt-1 w-full rounded bg-neutral-900 px-3 py-2 text-sm outline-none ring-1 ring-neutral-800 focus:ring-emerald-600"
               >
-                <option value="">default (stub:echo)</option>
+                <option value="">Default model</option>
                 {modelOptions.map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}

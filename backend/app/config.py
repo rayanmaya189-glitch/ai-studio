@@ -1,8 +1,8 @@
 """Application configuration, loaded from environment / .env.
 
-Every provider credential is optional. With nothing set, the app runs on the
-built-in `stub` provider and an in-memory SQLite database, so a fresh clone
-boots with zero external dependencies.
+Every provider credential is optional. When no providers are configured, the
+app requires explicit provider setup via the LLM Config page. All settings
+can be overridden via environment variables or a .env file.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     neo4j_password: str = "ads-password"
 
     # Default model selection, "<provider>:<model>".
-    default_chat_model: str = "stub:echo"
-    default_embed_model: str = "stub:echo-embed"
+    default_chat_model: str = ""
+    default_embed_model: str = ""
 
     # Provider credentials / endpoints (all optional).
     ollama_base_url: str = "http://localhost:11434"
