@@ -12,6 +12,7 @@ from app.api import (
     chat,
     edit,
     llm_config,
+    memory,
     projects,
     providers,
     pull_requests,
@@ -52,6 +53,7 @@ for router in (
     llm_config,
     edit,
     pull_requests,
+    memory,
 ):
     app.include_router(router.router)
 

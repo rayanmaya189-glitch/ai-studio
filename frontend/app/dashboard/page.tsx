@@ -24,8 +24,8 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold">Service Intelligence</h1>
         <p className="text-sm text-neutral-400">
-          Service dependencies and event flows. Graph data is illustrative until the Tree-sitter
-          code-graph engine lands.
+          Service dependencies inferred by the Tree-sitter scanner and code-graph engine. Scan a
+          project to populate it.
         </p>
       </div>
       <ServiceGraph projectId={projectId} />

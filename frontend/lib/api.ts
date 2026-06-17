@@ -132,6 +132,42 @@ export interface AgentRunResponse {
   final_output: string;
 }
 
+export type TaskStatus = "pending" | "in_progress" | "blocked" | "completed";
+
+export interface Task {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  assigned_agent_id: string | null;
+}
+
+export interface AgentMemory {
+  id: string;
+  agent_id: string;
+  project_id: string | null;
+  kind: string;
+  content: string;
+  created_at: string;
+}
+
+export type ProjectMemoryCategory =
+  | "architecture"
+  | "services"
+  | "standards"
+  | "decisions"
+  | "history";
+
+export interface ProjectMemory {
+  id: string;
+  project_id: string;
+  category: ProjectMemoryCategory;
+  title: string;
+  content: string;
+  created_at: string;
+}
+
 export const api = {
   listProjects: () => http<Project[]>("/projects"),
   createProject: (name: string, root_path: string) =>
@@ -173,5 +209,44 @@ export const api = {
     http<Agent>(`/agents/${agentId}/model`, {
       method: "PUT",
       body: JSON.stringify({ model }),
+    }),
+
+  // Tasks (F9)
+  listTasks: (projectId: string) => http<Task[]>(`/projects/${projectId}/tasks`),
+  createTask: (projectId: string, title: string, description = "", assigned_agent_id?: string) =>
+    http<Task>(`/projects/${projectId}/tasks`, {
+      method: "POST",
+      body: JSON.stringify({ title, description, assigned_agent_id }),
+    }),
+  updateTask: (
+    projectId: string,
+    taskId: string,
+    patch: Partial<Pick<Task, "title" | "description" | "status" | "assigned_agent_id">>,
+  ) =>
+    http<Task>(`/projects/${projectId}/tasks/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  // Project memory (F8)
+  listProjectMemory: (projectId: string) =>
+    http<ProjectMemory[]>(`/projects/${projectId}/memory`),
+  createProjectMemory: (
+    projectId: string,
+    category: ProjectMemoryCategory,
+    title: string,
+    content: string,
+  ) =>
+    http<ProjectMemory>(`/projects/${projectId}/memory`, {
+      method: "POST",
+      body: JSON.stringify({ category, title, content }),
+    }),
+
+  // Agent memory (F7)
+  listAgentMemory: (agentId: string) => http<AgentMemory[]>(`/agents/${agentId}/memory`),
+  createAgentMemory: (agentId: string, content: string, kind = "note", project_id?: string) =>
+    http<AgentMemory>(`/agents/${agentId}/memory`, {
+      method: "POST",
+      body: JSON.stringify({ content, kind, project_id }),
     }),
 };

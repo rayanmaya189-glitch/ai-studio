@@ -132,3 +132,59 @@ def test_pull_request_generate_endpoint_happy_path(client):
         assert body["model"] == "echo"
         assert isinstance(body["description"], str)
         assert len(body["description"]) > 0
+
+
+def test_project_memory_crud(client):
+    with tempfile.TemporaryDirectory() as d:
+        pid = client.post("/projects", json={"name": "mem", "root_path": d}).json()["id"]
+
+        assert client.get(f"/projects/{pid}/memory").json() == []
+
+        created = client.post(
+            f"/projects/{pid}/memory",
+            json={
+                "category": "decisions",
+                "title": "Use SQLite by default",
+                "content": "Zero-config invariant: a fresh clone must boot with no services.",
+            },
+        )
+        assert created.status_code == 200
+        assert created.json()["category"] == "decisions"
+
+        listed = client.get(f"/projects/{pid}/memory").json()
+        assert len(listed) == 1
+        assert listed[0]["title"] == "Use SQLite by default"
+
+
+def test_project_memory_rejects_unknown_category(client):
+    with tempfile.TemporaryDirectory() as d:
+        pid = client.post("/projects", json={"name": "mem", "root_path": d}).json()["id"]
+        bad = client.post(
+            f"/projects/{pid}/memory",
+            json={"category": "nonsense", "title": "x", "content": "y"},
+        )
+        assert bad.status_code == 400
+
+
+def test_agent_memory_crud(client):
+    # Seed agents, then attach memory to the coding agent.
+    agents = client.get("/agents").json()
+    coding = next(a for a in agents if a["role"] == "coding")
+
+    assert client.get(f"/agents/{coding['id']}/memory").json() == []
+
+    created = client.post(
+        f"/agents/{coding['id']}/memory",
+        json={"content": "Prefers small, composable functions.", "kind": "lesson"},
+    )
+    assert created.status_code == 200
+    assert created.json()["kind"] == "lesson"
+
+    listed = client.get(f"/agents/{coding['id']}/memory").json()
+    assert len(listed) == 1
+    assert listed[0]["content"].startswith("Prefers")
+
+
+def test_agent_memory_unknown_agent_404(client):
+    resp = client.get("/agents/does-not-exist/memory")
+    assert resp.status_code == 404

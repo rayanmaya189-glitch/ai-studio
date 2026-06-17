@@ -146,6 +146,40 @@ class TaskOut(ORMModel):
     assigned_agent_id: str | None
 
 
+# ---- Agent memory (F7) ----
+class AgentMemoryCreate(BaseModel):
+    content: str
+    kind: str = "note"  # task | fix | lesson | note
+    project_id: str | None = None
+
+
+class AgentMemoryOut(ORMModel):
+    id: str
+    agent_id: str
+    project_id: str | None
+    kind: str
+    content: str
+    created_at: datetime
+
+
+# ---- Project memory (F8) ----
+class ProjectMemoryCreate(BaseModel):
+    # category must be one of the PRD folders: architecture | services |
+    # standards | decisions | history (validated in the store helper).
+    category: str
+    title: str
+    content: str
+
+
+class ProjectMemoryOut(ORMModel):
+    id: str
+    project_id: str
+    category: str
+    title: str
+    content: str
+    created_at: datetime
+
+
 # ---- Providers ----
 # ---- Code editing (F12) ----
 class FileEdit(BaseModel):

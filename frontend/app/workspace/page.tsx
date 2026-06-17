@@ -7,13 +7,15 @@ import AgentPipeline from "@/components/AgentPipeline";
 import RagSearch from "@/components/RagSearch";
 import CodeEditPanel from "@/components/CodeEditPanel";
 import PullRequestPanel from "@/components/PullRequestPanel";
+import TaskBoard from "@/components/TaskBoard";
+import MemoryPanel from "@/components/MemoryPanel";
 import { api, type ScanResult } from "@/lib/api";
 
 export default function WorkspacePage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
   const [meta, setMeta] = useState<ScanResult | null>(null);
-  const [tab, setTab] = useState<"chat" | "agents" | "editpr">("chat");
+  const [tab, setTab] = useState<"chat" | "agents" | "editpr" | "tasks">("chat");
 
   useEffect(() => {
     const id = localStorage.getItem("ads.projectId");
@@ -126,7 +128,7 @@ export default function WorkspacePage() {
       {/* Chat / autonomous pipeline */}
       <div className="col-span-2 flex flex-col gap-2">
         <div className="flex gap-1">
-          {(["chat", "agents", "editpr"] as const).map((t) => (
+          {(["chat", "agents", "editpr", "tasks"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -136,7 +138,13 @@ export default function WorkspacePage() {
                   : "bg-neutral-900 text-neutral-400 ring-1 ring-neutral-800"
               }`}
             >
-              {t === "agents" ? "Agent pipeline" : t === "editpr" ? "Edit / PR" : "Chat"}
+              {t === "agents"
+                ? "Agent pipeline"
+                : t === "editpr"
+                  ? "Edit / PR"
+                  : t === "tasks"
+                    ? "Tasks / Memory"
+                    : "Chat"}
             </button>
           ))}
         </div>
@@ -145,6 +153,15 @@ export default function WorkspacePage() {
             <ChatPanel projectId={projectId} />
           ) : tab === "agents" ? (
             <AgentPipeline projectId={projectId} />
+          ) : tab === "tasks" ? (
+            <div className="grid h-full grid-cols-1 gap-2 md:grid-cols-2">
+              <div className="min-h-0">
+                <TaskBoard projectId={projectId} />
+              </div>
+              <div className="min-h-0">
+                <MemoryPanel projectId={projectId} />
+              </div>
+            </div>
           ) : (
             <div className="grid h-full grid-cols-1 gap-2 md:grid-cols-2">
               <div className="min-h-0">
