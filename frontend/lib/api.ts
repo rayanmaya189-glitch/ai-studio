@@ -1,6 +1,8 @@
 // Typed fetch client to the backend. All paths go through the Next.js
 // /api/* rewrite (see next.config.mjs), so they're same-origin in the browser.
 
+import { makeWsUrl } from "@/lib/ws";
+
 const BASE = "/api";
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -301,6 +303,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message, project_id, model, session_id }),
     }),
+
+  // WebSocket chat (streaming)
+  // Endpoint: ws://.../api/chat/ws
+  chatWsUrl: () => makeWsUrl("/api/chat/ws"),
 
   chatHistory: (project_id: string, session_id: string | null) =>
     http<ChatHistoryResponse>(

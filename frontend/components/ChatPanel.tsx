@@ -133,36 +133,66 @@ export default function ChatPanel({ projectId }: { projectId: string | null }) {
     });
 
     setBusy(true);
-    try {
-      const res = await api.chat(text, projectId ?? undefined, model || undefined, sessionId);
 
-      // Replace placeholder locally.
+    const ws = new WebSocket(api.chatWsUrl());
+    let finished = false;
+
+    function replaceAssistant(content: string, meta?: string) {
       setMessages((m) => {
         const idx =
           placeholderIndex !== -1
             ? placeholderIndex
             : m.findIndex((x, i) => i === m.length - 1 && x.role === "assistant");
         if (idx < 0)
-          return [...m, { role: "assistant", content: res.reply, meta: `${res.provider}:${res.model}` }];
+          return [
+            ...m,
+            { role: "assistant", content, meta },
+          ];
 
         const next = m.slice();
-        next[idx] = { role: "assistant", content: res.reply, meta: `${res.provider}:${res.model}` };
+        next[idx] = { role: "assistant", content, meta };
         return next;
       });
-    } catch (err) {
-      setMessages((m) => {
-        const idx =
-          placeholderIndex !== -1
-            ? placeholderIndex
-            : m.findIndex((x, i) => i === m.length - 1 && x.role === "assistant");
-        if (idx < 0) return [...m, { role: "assistant", content: `Error: ${err}` }];
+    }
 
-        const next = m.slice();
-        next[idx] = { role: "assistant", content: `Error: ${err}` };
-        return next;
-      });
-    } finally {
-      setBusy(false);
+    ws.onopen = () => {
+      ws.send(
+        JSON.stringify({
+          project_id: projectId,
+          session_id: sessionId,
+          message: text,
+          model: model || undefined,
+          stream: true,
+        }),
+      );
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === "assistant_message") {
+          replaceAssistant(
+            msg.content ?? "",
+            msg.provider && msg.model ? `${msg.provider}:${msg.model}` : undefined,
+          );
+        } else if (msg.type === "assistant_done") {
+          finished = true;
+          ws.close();
+        } else if (msg.type === "error") {
+          replaceAssistant(`Error: ${msg.error ?? "Unknown error"}`);
+        }
+      } catch {
+        // Ignore malformed messages.
+      }
+    };
+
+    ws.onerror = () => {
+      if (!finished) replaceAssistant("Error: WebSocket failed");
+    };
+
+    ws.onclose = async () => {
+      if (!projectId || !sessionId) return;
       // Re-load to guarantee persisted history and correct ordering.
       try {
         const h = await api.chatHistory(projectId, sessionId);
@@ -174,8 +204,10 @@ export default function ChatPanel({ projectId }: { projectId: string | null }) {
         setMessages(enriched);
       } catch {
         // ignore
+      } finally {
+        setBusy(false);
       }
-    }
+    };
   }
 
   return (

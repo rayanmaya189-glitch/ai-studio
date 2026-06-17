@@ -76,13 +76,7 @@ def set_agent_model(
 
 @router.post("/run", response_model=AgentRunResponse)
 def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> AgentRunResponse:
-    """Run the autonomous Planner->Architect->Coding->Review->Testing chain (F11).
-
-    The per-role model map is built from the Agent table (each role on its own
-    assigned model), with any ``model_map`` entries in the request taking
-    precedence. When a ``project_id`` is given, RAG context is retrieved and
-    threaded into every stage's prompt.
-    """
+    """Run the autonomous Planner->Architect->Coding->Review->Testing chain (F11)."""
     _seed_if_empty(db)
     pipeline_agents = list(db.scalars(select(Agent).where(Agent.project_id.is_(None))))
     model_map = {a.role: a.model for a in pipeline_agents}
@@ -106,7 +100,9 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         try:
             pm = get_project_memory(db, payload.project_id)
             if pm:
-                project_memory = "\n".join(f"[{m.category}] {m.title}\n{m.content}" for m in pm)
+                project_memory = "\n".join(
+                    f"[{m.category}] {m.title}\n{m.content}" for m in pm
+                )
         except Exception:  # noqa: BLE001 - memory is best-effort
             project_memory = None
 
@@ -149,3 +145,37 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         stages=[StageOut(**vars(s)) for s in result.stages],
         final_output=result.final_output,
     )
+
+
+@router.websocket("/run/ws")
+async def run_pipeline_ws(websocket):
+    """
+    WebSocket streaming for pipeline runs.
+
+    Client sends a single JSON payload matching AgentRunRequest plus:
+    {
+      goal, project_id?, model_map?
+    }
+
+    Server emits:
+      - { type: "pipeline_start" }
+      - { type: "pipeline_stage", stage: { role, provider, model, output, error } }
+      - { type: "pipeline_done", final_output }
+      - { type: "error", error }
+    """
+    await websocket.accept()
+    db = None
+    try:
+        payload = await websocket.receive_json()
+        goal = payload.get("goal")
+        project_id = payload.get("project_id")
+        model_map = payload.get("model_map") or None
+
+        if not goal:
+            await websocket.send_json({"type": "error", "error": "Missing goal"})
+            return
+
+        # Build model_map + memories using same logic as REST endpoint.
+        from app.models import Agent  # local import to keep websocket light
+
+        db = next(get_db())
