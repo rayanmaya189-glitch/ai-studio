@@ -97,9 +97,7 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         try:
             pm = get_project_memory(db, payload.project_id)
             if pm:
-                project_memory = "\n".join(
-                    f"[{m.category}] {m.title}\n{m.content}" for m in pm
-                )
+                project_memory = "\n".join(f"[{m.category}] {m.title}\n{m.content}" for m in pm)
         except Exception:  # noqa: BLE001 - memory is best-effort
             project_memory = None
 
@@ -109,9 +107,7 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
             for role, agent in agents_by_role.items():
                 mem = get_agent_memory(db, agent.id)
                 if mem:
-                    agent_memory_map[role] = "\n".join(
-                        f"[{m.kind}] {m.content}" for m in mem
-                    )
+                    agent_memory_map[role] = "\n".join(f"[{m.kind}] {m.content}" for m in mem)
         except Exception:  # noqa: BLE001 - memory is best-effort
             agent_memory_map = {}
 

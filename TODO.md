@@ -21,6 +21,10 @@
 - [x] Update `frontend/lib/api.ts` with client calls for `/edit/*` and `/pull-requests/generate`
 
 ## Verification
-- [ ] Run `cd backend && pytest`
+- [x] Run `cd backend && pytest` (28 passed)
 - [ ] Run backend locally: `uvicorn app.main:app --reload --port 8000`
 - [ ] Run frontend locally: `cd frontend && npm run dev`
+
+## Fixes applied (was checked off but not actually done)
+- [x] Register `edit` + `pull_requests` routers in `app/main.py` (F12/F13 were 404 — files existed but never `include_router`'d)
+- [x] Expose `stub` in `ProviderRegistry.all()` / `/providers` (tests expect it as the zero-config default)

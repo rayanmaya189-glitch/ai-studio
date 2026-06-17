@@ -98,7 +98,7 @@ def test_edit_apply_endpoint_happy_path(client):
         assert body["errors"] == []
 
         target = os.path.join(d, "src", "new_module.py")
-        with open(target, "r", encoding="utf-8") as fh:
+        with open(target, encoding="utf-8") as fh:
             assert "def hello" in fh.read()
 
 

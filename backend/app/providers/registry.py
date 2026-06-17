@@ -62,7 +62,12 @@ class ProviderRegistry:
         # OpenAI compat providers: default disabled unless DB row is enabled.
         for provider_name, default_base, default_key, models in (
             ("openai", settings.openai_base_url, settings.openai_api_key, _OPENAI_MODELS),
-            ("openrouter", settings.openrouter_base_url, settings.openrouter_api_key, _OPENROUTER_MODELS),
+            (
+                "openrouter",
+                settings.openrouter_base_url,
+                settings.openrouter_api_key,
+                _OPENROUTER_MODELS,
+            ),
             ("nim", settings.nim_base_url, settings.nim_api_key, _NIM_MODELS),
         ):
             cfg = db_cfg.get(provider_name)
@@ -84,8 +89,9 @@ class ProviderRegistry:
         self._providers[provider.name] = provider
 
     def all(self) -> list[LLMProvider]:
-        # Keep stub internal; frontend should not list it.
-        return [p for n, p in self._providers.items() if n != "stub"]
+        # stub is always present so the app stays functional with no creds; it is
+        # listed here (and via /providers) as the zero-config default.
+        return list(self._providers.values())
 
     def get(self, name: str) -> LLMProvider:
         if name not in self._providers:

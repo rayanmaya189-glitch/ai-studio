@@ -6,9 +6,11 @@ UI without wiring a full git/PR workflow yet.
 - Applies file contents under the project's `root_path`
 - Basic path traversal protection: the resolved target must stay within root
 """
+
 from __future__ import annotations
 
 import os
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 

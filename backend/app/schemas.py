@@ -187,6 +187,7 @@ class ProviderInfo(BaseModel):
 # ---- LLM Config (DB-backed) ----
 from enum import Enum
 
+
 class ProviderName(str, Enum):
     openrouter = "openrouter"
     openai = "openai"

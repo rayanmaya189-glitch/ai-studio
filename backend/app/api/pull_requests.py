@@ -8,6 +8,7 @@ Later versions can:
 - produce file diffs from the edit apply step
 - open real PRs via a provider (GitHub/GitLab)
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException

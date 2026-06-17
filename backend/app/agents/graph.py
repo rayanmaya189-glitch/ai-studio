@@ -121,9 +121,7 @@ def _run_stage(role: str, state: _PipelineState) -> StageResult:
 
     messages = [ChatMessage(role="system", content=_ROLE_PROMPTS[role])]
     if state["context"]:
-        messages.append(
-            ChatMessage(role="system", content=f"Project context:\n{state['context']}")
-        )
+        messages.append(ChatMessage(role="system", content=f"Project context:\n{state['context']}"))
     if state.get("project_memory"):
         messages.append(
             ChatMessage(

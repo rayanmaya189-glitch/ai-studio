@@ -7,7 +7,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agents, chat, llm_config, projects, providers, rag, scan, tasks
+from app.api import (
+    agents,
+    chat,
+    edit,
+    llm_config,
+    projects,
+    providers,
+    pull_requests,
+    rag,
+    scan,
+    tasks,
+)
 from app.config import settings
 from app.db import init_db
 
@@ -30,7 +41,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (projects, scan, chat, agents, tasks, providers, rag, llm_config):
+for router in (
+    projects,
+    scan,
+    chat,
+    agents,
+    tasks,
+    providers,
+    rag,
+    llm_config,
+    edit,
+    pull_requests,
+):
     app.include_router(router.router)
 
 
