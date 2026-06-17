@@ -234,6 +234,11 @@ class LLMProviderConfigIn(BaseModel):
     provider_name: ProviderName
     enabled: bool = False
 
+    # api_key semantics on PUT:
+    #   None        -> leave the stored key unchanged (the UI never receives the
+    #                  real key, so it sends None when the user didn't retype it)
+    #   ""          -> clear the stored key
+    #   "<value>"   -> set/replace the stored key
     api_key: str | None = None
     base_url: str | None = None
 
@@ -243,9 +248,26 @@ class LLMProviderConfigIn(BaseModel):
     ollama_cloud_base_url: str | None = None
 
 
+class LLMProviderConfigOut(ORMModel):
+    """Provider config as returned to the client — the API key is never echoed.
+
+    ``has_api_key`` lets the UI show whether a key is stored without exposing it.
+    """
+
+    provider_name: ProviderName
+    enabled: bool = False
+
+    has_api_key: bool = False
+    base_url: str | None = None
+
+    ollama_mode: str = "localhost"
+    ollama_local_base_url: str | None = None
+    ollama_cloud_base_url: str | None = None
+
+
 class LLMConfigIn(BaseModel):
     providers: list[LLMProviderConfigIn]
 
 
 class LLMConfigOut(BaseModel):
-    providers: list[LLMProviderConfigIn]
+    providers: list[LLMProviderConfigOut]

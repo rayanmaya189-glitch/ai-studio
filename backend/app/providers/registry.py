@@ -119,3 +119,15 @@ class ProviderRegistry:
 @lru_cache
 def get_registry() -> ProviderRegistry:
     return ProviderRegistry()
+
+
+def reset_registry() -> None:
+    """Drop the cached registry so the next ``get_registry()`` rebuilds it.
+
+    Provider instances are constructed from the persisted ``LLMProviderConfig``
+    rows at build time, so config changes (enable/disable, new key, new base
+    URL) only take effect once the registry is rebuilt. Callers that mutate the
+    config (PUT /llm-config) invoke this so changes apply live, without a
+    server restart.
+    """
+    get_registry.cache_clear()

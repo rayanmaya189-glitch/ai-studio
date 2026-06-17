@@ -59,11 +59,31 @@ export interface ProviderInfo {
 
 export type OllamaMode = "localhost" | "cloud";
 
-export interface LLMProviderConfig {
-  provider_name: string; // "openrouter" | "openai" | "nim" | "ollama" | "anthropic"
+export type ProviderName = "openrouter" | "openai" | "nim" | "ollama" | "anthropic";
+
+// Sent TO the backend. api_key semantics:
+//   undefined/null -> leave the stored key unchanged
+//   ""             -> clear the stored key
+//   "<value>"      -> set/replace the stored key
+export interface LLMProviderConfigIn {
+  provider_name: ProviderName;
   enabled: boolean;
 
-  api_key: string | null;
+  api_key?: string | null;
+  base_url?: string | null;
+
+  ollama_mode?: OllamaMode;
+  ollama_local_base_url?: string | null;
+  ollama_cloud_base_url?: string | null;
+}
+
+// Returned FROM the backend. The API key is never echoed; has_api_key tells the
+// UI whether one is stored.
+export interface LLMProviderConfigOut {
+  provider_name: ProviderName;
+  enabled: boolean;
+
+  has_api_key: boolean;
   base_url: string | null;
 
   ollama_mode: OllamaMode;
@@ -71,8 +91,12 @@ export interface LLMProviderConfig {
   ollama_cloud_base_url: string | null;
 }
 
-export interface LLMConfig {
-  providers: LLMProviderConfig[];
+export interface LLMConfigIn {
+  providers: LLMProviderConfigIn[];
+}
+
+export interface LLMConfigOut {
+  providers: LLMProviderConfigOut[];
 }
 
 export interface Agent {
@@ -204,6 +228,15 @@ export const api = {
       },
     ),
   providers: () => http<ProviderInfo[]>("/providers"),
+
+  // LLM provider configuration (DB-backed, persistent across restarts).
+  getLlmConfig: () => http<LLMConfigOut>("/llm-config"),
+  saveLlmConfig: (providers: LLMProviderConfigIn[]) =>
+    http<LLMConfigOut>("/llm-config", {
+      method: "PUT",
+      body: JSON.stringify({ providers }),
+    }),
+
   agents: () => http<Agent[]>("/agents"),
   setAgentModel: (agentId: string, model: string) =>
     http<Agent>(`/agents/${agentId}/model`, {
