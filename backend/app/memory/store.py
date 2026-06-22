@@ -1,8 +1,9 @@
 """Agent memory (F7) and project memory (F8) — DB-backed helpers.
 
 These are thin, real CRUD helpers over the AgentMemory / ProjectMemory tables.
-They aren't stubbed; what's deferred is *using* them inside agent prompts, which
-lands with the LangGraph orchestration in ``agents/graph.py``.
+They are threaded into agent prompts by the pipeline (``app/api/agents.py``
+reads them into each run via ``_build_pipeline_inputs`` and writes each stage
+back via ``_record_stage_memory``) and by the project chatbots.
 """
 
 from __future__ import annotations

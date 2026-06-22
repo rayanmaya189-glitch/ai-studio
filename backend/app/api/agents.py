@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.agents.graph import PIPELINE_ROLES, iter_agent_pipeline, run_agent_pipeline
 from app.db import get_db
-from app.memory.store import add_project_memory, get_agent_memory, get_project_memory
+from app.memory.store import (
+    add_agent_memory,
+    add_project_memory,
+    get_agent_memory,
+    get_project_memory,
+)
 from app.models import Agent
 from app.rag.ingest import build_context_block, retrieve
 from app.schemas import (
@@ -86,9 +91,14 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         agent_memory_map=agent_memory_map,
     )
 
-    # Record the run in shared project memory (history) so project chatbots stay
-    # aware of what the pipeline planned/built — the "one shared place" both
-    # pipeline agents and custom chatbots read from. Best-effort.
+    # Write each stage back to its own agent's private memory, then record the
+    # run in shared project memory (history) so project chatbots stay aware of
+    # what the pipeline planned/built. Both are best-effort.
+    agent_ids = _pipeline_agent_ids(db)
+    for stage in result.stages:
+        _record_stage_memory(
+            db, agent_ids, payload.project_id, payload.goal, stage.role, stage.output, stage.error
+        )
     if payload.project_id:
         _record_pipeline_history(db, payload.project_id, payload.goal, result.final_output)
 
@@ -161,6 +171,45 @@ def _record_pipeline_history(db: Session, project_id: str, goal: str, final_outp
         pass
 
 
+def _pipeline_agent_ids(db: Session) -> dict[str, str]:
+    """Map each global pipeline role to its Agent id (for write-back memory)."""
+    return {
+        a.role: a.id
+        for a in db.scalars(select(Agent).where(Agent.project_id.is_(None)))
+    }
+
+
+def _record_stage_memory(
+    db: Session,
+    agent_ids: dict[str, str],
+    project_id: str | None,
+    goal: str,
+    role: str,
+    output: str,
+    error: str | None,
+) -> None:
+    """Append one stage's output to its own agent's private memory (best-effort).
+
+    This is the *write-during-run* half of agent memory: each role accumulates
+    notes from the runs it participated in, so a later run's ``agent_memory_map``
+    (see :func:`_build_pipeline_inputs`) feeds that history back into the prompt.
+    Failed or empty stages are skipped — there's nothing worth remembering.
+    """
+    agent_id = agent_ids.get(role)
+    if not agent_id or error or not output.strip():
+        return
+    try:
+        add_agent_memory(
+            db,
+            agent_id=agent_id,
+            content=f"Goal: {goal[:120]}\n{output[:2000]}",
+            kind="pipeline",
+            project_id=project_id,
+        )
+    except Exception:  # noqa: BLE001 - recording is best-effort
+        pass
+
+
 @router.websocket("/run/ws")
 async def run_pipeline_ws(websocket: WebSocket) -> None:
     """Stream a pipeline run stage-by-stage (F11).
@@ -193,6 +242,7 @@ async def run_pipeline_ws(websocket: WebSocket) -> None:
 
         await websocket.send_json({"type": "pipeline_start", "roles": list(PIPELINE_ROLES)})
 
+        agent_ids = _pipeline_agent_ids(db)
         final_output = ""
         for stage in iter_agent_pipeline(
             goal,
@@ -202,6 +252,11 @@ async def run_pipeline_ws(websocket: WebSocket) -> None:
             agent_memory_map=agent_memory_map,
         ):
             final_output = stage.output or final_output
+            # Write-during-run: persist each stage to its agent's memory as soon
+            # as it completes, before streaming it to the client.
+            _record_stage_memory(
+                db, agent_ids, project_id, goal, stage.role, stage.output, stage.error
+            )
             await websocket.send_json(
                 {
                     "type": "pipeline_stage",

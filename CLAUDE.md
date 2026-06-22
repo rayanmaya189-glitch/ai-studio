@@ -10,7 +10,7 @@ User flow: pick a project folder → scan it → build a project-specific knowle
 
 ## Project state: scaffold, not greenfield
 
-Every subsystem is wired end-to-end behind real interfaces. The **scanner and code graph are real** (Tree-sitter parsing, heuristic service/endpoint/DB detection). What is still **stubbed** is the multi-agent orchestration: `backend/app/agents/graph.py` is a single-agent passthrough, not the LangGraph Planner→Architect→Coding→Review→Testing chain the PRD describes. Memory CRUD (`app/memory/store.py`) is real but not yet threaded into agent prompts.
+Every subsystem is wired end-to-end behind real interfaces. The **scanner and code graph are real** (Tree-sitter parsing, heuristic service/endpoint/DB detection). The **multi-agent orchestration is now real too**: `backend/app/agents/graph.py` compiles a LangGraph `StateGraph` running the Planner→Architect→Coding→Review→Testing chain, each role on its own assigned model, with every prior stage's output threaded into the next. It runs both blocking (`run_agent_pipeline`, `POST /agents/run`) and streaming stage-by-stage (`iter_agent_pipeline`, `WS /agents/run/ws`). Memory CRUD (`app/memory/store.py`) is real and **is threaded into agent prompts** — `_build_pipeline_inputs` in `app/api/agents.py` reads project + per-agent memory into each run, and the final output is written back to shared project memory. The remaining gap is *write-during-run*: pipeline agents read memory but don't append their own notes mid-run (only the final result is persisted, as `history`).
 
 ## Commands
 
@@ -23,7 +23,7 @@ docker compose --profile graph up -d           # + Neo4j (optional)
 
 # Backend (Python ≥3.12)
 cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000      # health: /health, docs: /docs
+uvicorn app.main:app --reload --port 8754      # health: /health, docs: /docs
 
 # Frontend
 cd frontend && npm install && npm run dev       # http://localhost:3000
@@ -39,9 +39,9 @@ The frontend has no test suite; `npm run lint` runs `next lint`.
 
 ## Architecture: the zero-config invariant
 
-The single most important design decision, enforced across the whole stack: **a fresh clone boots and runs with no external services and no API keys.** Preserve this when adding features — every external dependency must degrade gracefully, never hard-fail. Three fallback layers implement it:
+The design intent across the whole stack: **a fresh clone boots, scans, and browses with no external services and no API keys.** Storage and retrieval degrade gracefully; LLM calls are the one hard dependency (see layer 1). Preserve this when adding features — infrastructure dependencies must degrade, never hard-fail. The fallback layers:
 
-1. **LLM providers** (`app/providers/`): the `stub` provider is always registered and `available()`. Model references everywhere use the form `"<provider>:<model>"` (e.g. `ollama:qwen2.5-coder`, `anthropic:claude-opus-4-8`). `ProviderRegistry.resolve()` returns the configured default, and **falls back to `stub:echo` whenever the requested provider lacks creds or its daemon is down** — so callers never branch on availability. Adding a provider = subclass `LLMProvider` (`chat` + `embed` + `available` + `list_models`) and register it in `registry.py`. OpenAI/OpenRouter/NIM all share `OpenAICompatProvider`.
+1. **LLM providers** (`app/providers/`): model references everywhere use the form `"<provider>:<model>"` (e.g. `ollama:qwen2.5-coder`, `anthropic:claude-opus-4-8`). `ProviderRegistry._build()` registers **only providers the user has enabled in the DB** (`LLMProviderConfig` rows) — no stub or fake provider is registered. `ProviderRegistry.resolve()` returns the configured default and **raises a descriptive `ValueError` when no provider is configured / enabled / available**, pointing the user at the LLM Config page — it does *not* silently fall back to an echo stub. So a fresh clone can scan and browse a project, but chat/pipeline/PR endpoints error until at least one provider is enabled (e.g. a local Ollama daemon needs no key). `StubProvider` still exists in `stub.py` but is used only by tests, never registered at runtime. Adding a provider = subclass `LLMProvider` (`chat` + `embed` + `available` + `list_models`) and wire it into `registry._build()`. OpenAI/OpenRouter/NIM all share `OpenAICompatProvider`.
 2. **Vector store** (`app/rag/vector_store.py`): `get_vector_store()` probes Qdrant over HTTP and returns `QdrantStore` if reachable, else `LocalStore` (brute-force cosine over a per-project JSON file). Both implement the same `VectorStore` ABC. The local store is explicitly *not* the 500k-LOC production path — it's the fallback.
 3. **Database** (`app/db.py`, `app/config.py`): defaults to SQLite (`./ads.db`); set `DATABASE_URL` to point at Postgres. Schema is created via `Base.metadata.create_all` on startup (`init_db` in the FastAPI lifespan) — **there are no migrations yet**; introduce Alembic before the schema is considered stable.
 
@@ -65,7 +65,7 @@ Chat (`app/api/chat.py`) closes the loop: it retrieves RAG context for the proje
 - `app/models.py` — the 10 PRD tables (Project, Service, File, Agent, Task, AgentMemory, ProjectMemory, Embedding, CodeGraphNode, Conversation). IDs are 32-char uuid hex; loosely-structured data lives in JSON columns. The `Embedding` row is a *pointer* — the actual vector lives in the vector store.
 - `app/schemas.py` — Pydantic request/response models (the API contract the frontend's `lib/api.ts` mirrors).
 - `app/api/` — one router per feature area; docstrings tag the PRD feature codes (F2 scan, F3 RAG, F4 graph, F5/F6 agents, F8 memory, F10 chat).
-- The 7 agent roles (planner, architect, coding, review, testing, documentation, ocr) are seeded lazily on first `GET /agents` with `stub:echo` defaults; each role's model is independently reassignable (`PUT /agents/{id}/model`). **Model-per-agent is a core PRD requirement, not a config nicety.**
+- The 7 agent roles (planner, architect, coding, review, testing, documentation, ocr) are seeded lazily on first `GET /agents` with **empty model refs** (`_DEFAULT_AGENTS` in `app/api/agents.py`); a model must be assigned via the LLM Config page or `PUT /agents/{id}/model` before that role can run. Each role's model is independently reassignable. **Model-per-agent is a core PRD requirement, not a config nicety.**
 
 ## Two memory systems (keep them separate)
 
@@ -74,7 +74,7 @@ Chat (`app/api/chat.py`) closes the loop: it retrieves RAG context for the proje
 
 ## Frontend
 
-Next.js 15 (App Router) + React 19 + Tailwind + React Flow. `next.config.mjs` rewrites `/api/*` → the FastAPI backend (`BACKEND_URL`, default `localhost:8000`), so the browser uses same-origin paths. **All backend calls go through the typed client in `lib/api.ts`** — extend it rather than calling `fetch` directly from components. Pages: `app/page.tsx` (project picker), `app/dashboard/` (React Flow service graph), `app/workspace/` (chat). Monaco editor is planned per the PRD but not yet wired.
+Next.js 15 (App Router) + React 19 + Tailwind + React Flow. `next.config.mjs` rewrites `/api/*` → the FastAPI backend (`BACKEND_URL`, default `localhost:8754`), so the browser uses same-origin paths. **All backend calls go through the typed client in `lib/api.ts`** — extend it rather than calling `fetch` directly from components. Pages: `app/page.tsx` (project picker), `app/dashboard/` (React Flow service graph), `app/workspace/` (chat). Monaco editor is planned per the PRD but not yet wired.
 
 ## Non-functional targets to design against
 

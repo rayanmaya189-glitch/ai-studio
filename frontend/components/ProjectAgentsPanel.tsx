@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, type ProjectAgentOut, type ProviderInfo } from "@/lib/api";
+import {
+  api,
+  type AgentPrivateMemoryEntry,
+  type ProjectAgentOut,
+  type ProviderInfo,
+} from "@/lib/api";
 
 interface ChatMsg {
   role: "user" | "assistant";
@@ -26,6 +31,10 @@ export default function ProjectAgentsPanel({
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showMemory, setShowMemory] = useState(false);
+  const [memory, setMemory] = useState<AgentPrivateMemoryEntry[]>([]);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [sharedNote, setSharedNote] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   // Create form state
@@ -67,6 +76,44 @@ export default function ProjectAgentsPanel({
     setMessages([]);
     setShowCreate(false);
     setShowEdit(false);
+    setShowMemory(false);
+    setMemory([]);
+  }
+
+  async function toggleMemory() {
+    if (showMemory) {
+      setShowMemory(false);
+      return;
+    }
+    if (!projectId || !selectedAgent) return;
+    setShowMemory(true);
+    setMemoryLoading(true);
+    try {
+      setMemory(await api.listProjectAgentMemory(projectId, selectedAgent.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load memory");
+    } finally {
+      setMemoryLoading(false);
+    }
+  }
+
+  // Promote a chat reply into the shared project memory so the pipeline agents
+  // and other chatbots become aware of it (POST .../{agent}/share).
+  async function shareToShared(content: string) {
+    if (!projectId || !selectedAgent) return;
+    const title = window.prompt(
+      "Title for this shared-memory note:",
+      `${selectedAgent.name}: ${content.slice(0, 48)}`,
+    );
+    if (!title) return;
+    setSharedNote(null);
+    setError(null);
+    try {
+      await api.shareAgentToProjectMemory(projectId, selectedAgent.id, title, content);
+      setSharedNote("Shared to project memory (history).");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Share failed");
+    }
   }
 
   const modelOptions = providers
@@ -410,7 +457,44 @@ export default function ProjectAgentsPanel({
                 <span className="truncate">{selectedAgent.description}</span>
               </>
             )}
+            <button
+              onClick={toggleMemory}
+              className={`ml-auto shrink-0 rounded px-2 py-0.5 text-[10px] ring-1 transition-colors ${
+                showMemory
+                  ? "bg-blue-900/30 text-blue-300 ring-blue-700"
+                  : "text-neutral-500 ring-neutral-800 hover:text-neutral-300"
+              }`}
+            >
+              {showMemory ? "Hide memory" : "Private memory"}
+            </button>
           </div>
+
+          {sharedNote && (
+            <div className="border-b border-neutral-800 bg-purple-900/10 px-4 py-1.5 text-[10px] text-purple-300">
+              {sharedNote}
+            </div>
+          )}
+
+          {/* Private memory panel */}
+          {showMemory && (
+            <div className="max-h-40 space-y-2 overflow-y-auto border-b border-neutral-800 bg-neutral-950/50 p-3">
+              {memoryLoading && <p className="text-xs text-neutral-500">Loading memory…</p>}
+              {!memoryLoading && memory.length === 0 && (
+                <p className="text-xs text-neutral-600">
+                  No private memory yet. This agent remembers conversations when you chat with it.
+                </p>
+              )}
+              {memory.map((m) => (
+                <div key={m.id} className="rounded bg-neutral-900 px-2 py-1.5 text-xs">
+                  <div className="flex items-center gap-2 text-[10px] text-neutral-600">
+                    <span className="rounded bg-blue-900/30 px-1 text-blue-400">{m.kind}</span>
+                    <span>{new Date(m.created_at).toLocaleString()}</span>
+                  </div>
+                  <pre className="mt-1 whitespace-pre-wrap text-neutral-300">{m.content}</pre>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Messages */}
           <div className="flex-1 space-y-3 overflow-y-auto p-4">
@@ -442,7 +526,7 @@ export default function ProjectAgentsPanel({
                 >
                   {m.content}
                   {(m.meta || m.used_context !== undefined) && (
-                    <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-neutral-500">
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-neutral-500">
                       {m.meta && <span>{m.meta}</span>}
                       {m.used_context && (
                         <span className="rounded bg-emerald-900/30 px-1 text-emerald-400">
@@ -458,6 +542,15 @@ export default function ProjectAgentsPanel({
                         <span className="rounded bg-purple-900/30 px-1 text-purple-400">
                           shared
                         </span>
+                      )}
+                      {m.role === "assistant" && (
+                        <button
+                          onClick={() => shareToShared(m.content)}
+                          className="rounded px-1 text-purple-400 hover:bg-purple-900/30"
+                          title="Promote this reply to shared project memory"
+                        >
+                          + share
+                        </button>
                       )}
                     </div>
                   )}

@@ -59,6 +59,39 @@ def test_run_endpoint_with_project_threads_context(client):
         assert len(resp.json()["stages"]) == len(PIPELINE_ROLES)
 
 
+def test_run_writes_each_stage_to_agent_memory(client):
+    """Write-during-run: a pipeline run appends each stage's output to that
+    role's own agent memory, so a later run can feed it back into the prompt.
+
+    The test DB is shared across tests, so this asserts on the *delta* for a
+    goal unique to this test rather than on absolute counts.
+    """
+    agents = {a["role"]: a["id"] for a in client.get("/agents").json()}
+    goal = "Wire up the /metrics-prometheus exporter"
+
+    def notes_for_goal(agent_id: str) -> list[dict]:
+        return [
+            m
+            for m in client.get(f"/agents/{agent_id}/memory").json()
+            if m["kind"] == "pipeline" and goal in m["content"]
+        ]
+
+    # No memory mentions this goal before the run.
+    for role in PIPELINE_ROLES:
+        assert notes_for_goal(agents[role]) == []
+
+    resp = client.post(
+        "/agents/run",
+        json={"goal": goal, "model_map": {r: "test:test-model" for r in PIPELINE_ROLES}},
+    )
+    assert resp.status_code == 200
+
+    # Each role recorded exactly one note from this run.
+    for role in PIPELINE_ROLES:
+        notes = notes_for_goal(agents[role])
+        assert len(notes) == 1, f"{role} should have one pipeline memory entry for this goal"
+
+
 def test_run_ws_streams_each_stage_in_order(client):
     """The /run/ws socket emits pipeline_start, one stage event per role in
     pipeline order, then pipeline_done with the last stage's output."""

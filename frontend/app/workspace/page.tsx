@@ -31,9 +31,22 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     const id = localStorage.getItem("ads.projectId");
-    setProjectId(id);
-    setProjectName(localStorage.getItem("ads.projectName") || "");
-    if (id) api.metadata(id).then(setMeta).catch(() => {});
+    if (!id) return;
+    // Validate the stored project still exists before rendering the workspace;
+    // a stale localStorage id (e.g. after a DB reset) would otherwise leave the
+    // panels making requests against a missing project.
+    api
+      .getProject(id)
+      .then((p) => {
+        setProjectId(p.id);
+        setProjectName(p.name);
+        return api.metadata(p.id).then(setMeta).catch(() => {});
+      })
+      .catch(() => {
+        localStorage.removeItem("ads.projectId");
+        localStorage.removeItem("ads.projectName");
+        setProjectId(null);
+      });
   }, []);
 
   if (!projectId) {

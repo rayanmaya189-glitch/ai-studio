@@ -22,7 +22,7 @@
 
 ## Verification
 - [x] Run `cd backend && pytest` (28 passed)
-- [ ] Run backend locally: `uvicorn app.main:app --reload --port 8000`
+- [ ] Run backend locally: `uvicorn app.main:app --reload --port 8754`
 - [ ] Run frontend locally: `cd frontend && npm run dev`
 
 ## Fixes applied (was checked off but not actually done)

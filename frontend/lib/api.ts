@@ -40,12 +40,6 @@ export interface Project {
   created_at: string;
 }
 
-export interface ChatResponse {
-  reply: string;
-  model: string;
-  provider: string;
-}
-
 export interface ChatHistoryItem {
   role: string;
   content: string;
@@ -199,15 +193,6 @@ export interface Task {
   assigned_agent_id: string | null;
 }
 
-export interface AgentMemory {
-  id: string;
-  agent_id: string;
-  project_id: string | null;
-  kind: string;
-  content: string;
-  created_at: string;
-}
-
 export type ProjectMemoryCategory =
   | "architecture"
   | "services"
@@ -293,16 +278,8 @@ export const api = {
   graph: (projectId: string) => http<CodeGraph>(`/scan/${projectId}/graph`),
 
   // ---- Chat ----
-  chat: (
-    message: string,
-    project_id?: string,
-    model?: string,
-    session_id?: string,
-  ) =>
-    http<ChatResponse>("/chat", {
-      method: "POST",
-      body: JSON.stringify({ message, project_id, model, session_id }),
-    }),
+  // The non-streaming POST /chat endpoint still exists on the backend, but the
+  // UI uses the streaming WebSocket exclusively (chatWsUrl).
 
   // WebSocket chat (streaming)
   // Endpoint: ws://.../api/chat/ws
@@ -397,14 +374,6 @@ export const api = {
     http<ProjectMemory>(`/projects/${projectId}/memory`, {
       method: "POST",
       body: JSON.stringify({ category, title, content }),
-    }),
-
-  // ---- Agent memory ----
-  listAgentMemory: (agentId: string) => http<AgentMemory[]>(`/agents/${agentId}/memory`),
-  createAgentMemory: (agentId: string, content: string, kind = "note", project_id?: string) =>
-    http<AgentMemory>(`/agents/${agentId}/memory`, {
-      method: "POST",
-      body: JSON.stringify({ content, kind, project_id }),
     }),
 
   // ---- Project-specific custom agents / chatbots ----

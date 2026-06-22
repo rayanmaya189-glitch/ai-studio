@@ -165,18 +165,19 @@ def test_agent_memory_crud(client):
     agents = client.get("/agents").json()
     coding = next(a for a in agents if a["role"] == "coding")
 
-    assert client.get(f"/agents/{coding['id']}/memory").json() == []
-
+    # The shared test DB may already hold pipeline-written memory for this agent
+    # (see test_agent_graph.py), so assert on this entry rather than on counts.
+    content = "Prefers small, composable functions."
     created = client.post(
         f"/agents/{coding['id']}/memory",
-        json={"content": "Prefers small, composable functions.", "kind": "lesson"},
+        json={"content": content, "kind": "lesson"},
     )
     assert created.status_code == 200
     assert created.json()["kind"] == "lesson"
 
     listed = client.get(f"/agents/{coding['id']}/memory").json()
-    assert len(listed) == 1
-    assert listed[0]["content"].startswith("Prefers")
+    matching = [m for m in listed if m["content"] == content and m["kind"] == "lesson"]
+    assert len(matching) == 1
 
 
 def test_agent_memory_unknown_agent_404(client):
