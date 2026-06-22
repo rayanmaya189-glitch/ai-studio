@@ -17,6 +17,7 @@ error string rather than aborting the whole run.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TypedDict
 
@@ -287,3 +288,32 @@ def run_agent_pipeline(
         }
     )
     return PipelineResult(goal=goal, stages=final["stages"])
+
+
+def iter_agent_pipeline(
+    goal: str,
+    model_map: dict[str, str] | None = None,
+    context: str | None = None,
+    project_memory: str | None = None,
+    agent_memory_map: dict[str, str] | None = None,
+) -> Iterator[StageResult]:
+    """Stream the pipeline, yielding each ``StageResult`` as its stage completes.
+
+    Same chain and prompt assembly as :func:`run_agent_pipeline` — the stages run
+    in :data:`PIPELINE_ROLES` order and each one sees every prior stage's output —
+    but results are surfaced incrementally so a WebSocket can emit them live
+    instead of blocking on the whole run. A failing stage degrades to a recorded
+    error string (see :func:`_run_stage`) and the chain continues.
+    """
+    state: _PipelineState = {
+        "goal": goal,
+        "context": context or "",
+        "project_memory": project_memory or "",
+        "agent_memory_map": agent_memory_map or {},
+        "model_map": model_map or {},
+        "stages": [],
+    }
+    for role in PIPELINE_ROLES:
+        result = _run_stage(role, state)
+        state["stages"].append(result)
+        yield result

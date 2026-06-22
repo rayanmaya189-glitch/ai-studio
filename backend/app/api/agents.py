@@ -7,11 +7,11 @@ can be independently reassigned to any provider/model.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents.graph import run_agent_pipeline
+from app.agents.graph import PIPELINE_ROLES, iter_agent_pipeline, run_agent_pipeline
 from app.db import get_db
 from app.memory.store import add_project_memory, get_agent_memory, get_project_memory
 from app.models import Agent
@@ -74,41 +74,9 @@ def set_agent_model(
 @router.post("/run", response_model=AgentRunResponse)
 def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> AgentRunResponse:
     """Run the autonomous Planner->Architect->Coding->Review->Testing chain (F11)."""
-    _seed_if_empty(db)
-    pipeline_agents = list(db.scalars(select(Agent).where(Agent.project_id.is_(None))))
-    model_map = {a.role: a.model for a in pipeline_agents}
-    if payload.model_map:
-        model_map.update(payload.model_map)
-
-    # Retrieve RAG + memories (best-effort — failures yield none).
-    context = None
-    project_memory = None
-    agent_memory_map: dict[str, str] = {}
-
-    if payload.project_id:
-        # RAG context
-        try:
-            hits = retrieve(payload.project_id, payload.goal, limit=5)
-            context = build_context_block(hits) or None
-        except Exception:  # noqa: BLE001 - retrieval is best-effort
-            context = None
-
-        # Project memory
-        try:
-            pm = get_project_memory(db, payload.project_id)
-            if pm:
-                project_memory = "\n".join(f"[{m.category}] {m.title}\n{m.content}" for m in pm)
-        except Exception:  # noqa: BLE001 - memory is best-effort
-            project_memory = None
-
-        # Agent memory per role (pipeline agents only)
-        try:
-            for agent in pipeline_agents:
-                mem = get_agent_memory(db, agent.id)
-                if mem:
-                    agent_memory_map[agent.role] = "\n".join(f"[{m.kind}] {m.content}" for m in mem)
-        except Exception:  # noqa: BLE001 - memory is best-effort
-            agent_memory_map = {}
+    model_map, context, project_memory, agent_memory_map = _build_pipeline_inputs(
+        db, payload.goal, payload.project_id, payload.model_map
+    )
 
     result = run_agent_pipeline(
         payload.goal,
@@ -121,17 +89,8 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
     # Record the run in shared project memory (history) so project chatbots stay
     # aware of what the pipeline planned/built — the "one shared place" both
     # pipeline agents and custom chatbots read from. Best-effort.
-    if payload.project_id and result.final_output:
-        try:
-            add_project_memory(
-                db,
-                project_id=payload.project_id,
-                category="history",
-                title=f"Pipeline run: {payload.goal[:120]}",
-                content=result.final_output[:4000],
-            )
-        except Exception:  # noqa: BLE001 - recording is best-effort
-            pass
+    if payload.project_id:
+        _record_pipeline_history(db, payload.project_id, payload.goal, result.final_output)
 
     return AgentRunResponse(
         goal=result.goal,
@@ -140,21 +99,80 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
     )
 
 
-@router.websocket("/run/ws")
-async def run_pipeline_ws(websocket):
+def _build_pipeline_inputs(
+    db: Session, goal: str, project_id: str | None, model_map: dict[str, str] | None
+) -> tuple[dict[str, str], str | None, str | None, dict[str, str]]:
+    """Assemble the model map + RAG context + memories for a pipeline run.
+
+    Shared by the REST (``POST /run``) and WebSocket (``/run/ws``) paths so both
+    ground the pipeline identically. All retrieval is best-effort: a failure in
+    any layer yields ``None``/empty rather than aborting the run.
     """
-    WebSocket streaming for pipeline runs.
+    _seed_if_empty(db)
+    pipeline_agents = list(db.scalars(select(Agent).where(Agent.project_id.is_(None))))
+    resolved_map = {a.role: a.model for a in pipeline_agents}
+    if model_map:
+        resolved_map.update(model_map)
 
-    Client sends a single JSON payload matching AgentRunRequest plus:
-    {
-      goal, project_id?, model_map?
-    }
+    context = None
+    project_memory = None
+    agent_memory_map: dict[str, str] = {}
 
-    Server emits:
-      - { type: "pipeline_start" }
-      - { type: "pipeline_stage", stage: { role, provider, model, output, error } }
-      - { type: "pipeline_done", final_output }
-      - { type: "error", error }
+    if project_id:
+        try:
+            hits = retrieve(project_id, goal, limit=5)
+            context = build_context_block(hits) or None
+        except Exception:  # noqa: BLE001 - retrieval is best-effort
+            context = None
+
+        try:
+            pm = get_project_memory(db, project_id)
+            if pm:
+                project_memory = "\n".join(f"[{m.category}] {m.title}\n{m.content}" for m in pm)
+        except Exception:  # noqa: BLE001 - memory is best-effort
+            project_memory = None
+
+        try:
+            for agent in pipeline_agents:
+                mem = get_agent_memory(db, agent.id)
+                if mem:
+                    agent_memory_map[agent.role] = "\n".join(
+                        f"[{m.kind}] {m.content}" for m in mem
+                    )
+        except Exception:  # noqa: BLE001 - memory is best-effort
+            agent_memory_map = {}
+
+    return resolved_map, context, project_memory, agent_memory_map
+
+
+def _record_pipeline_history(db: Session, project_id: str, goal: str, final_output: str) -> None:
+    """Persist a completed run to shared project memory (best-effort)."""
+    if not final_output:
+        return
+    try:
+        add_project_memory(
+            db,
+            project_id=project_id,
+            category="history",
+            title=f"Pipeline run: {goal[:120]}",
+            content=final_output[:4000],
+        )
+    except Exception:  # noqa: BLE001 - recording is best-effort
+        pass
+
+
+@router.websocket("/run/ws")
+async def run_pipeline_ws(websocket: WebSocket) -> None:
+    """Stream a pipeline run stage-by-stage (F11).
+
+    Client sends a single JSON payload: ``{ goal, project_id?, model_map? }``.
+
+    Server emits, in order:
+      - ``{ type: "pipeline_start", roles: [...] }`` — before the first stage
+      - ``{ type: "pipeline_stage", stage: { role, provider, model, output, error } }``
+        once per stage, as soon as that stage completes
+      - ``{ type: "pipeline_done", final_output }`` — after the last stage
+      - ``{ type: "error", error }`` — on a fatal error (bad payload, no provider)
     """
     await websocket.accept()
     db = None
@@ -168,57 +186,22 @@ async def run_pipeline_ws(websocket):
             await websocket.send_json({"type": "error", "error": "Missing goal"})
             return
 
-        # Build model_map + memories using same logic as REST endpoint.
-        from app.models import Agent  # local import to keep websocket light
-
         db = next(get_db())
-        pipeline_agents = list(db.scalars(select(Agent).where(Agent.project_id.is_(None))))
-        model_map = model_map or {a.role: a.model for a in pipeline_agents}
+        resolved_map, context, project_memory, agent_memory_map = _build_pipeline_inputs(
+            db, goal, project_id, model_map
+        )
 
-        # Retrieve RAG + memories (best-effort — failures yield none).
-        context = None
-        project_memory = None
-        agent_memory_map: dict[str, str] = {}
+        await websocket.send_json({"type": "pipeline_start", "roles": list(PIPELINE_ROLES)})
 
-        if project_id:
-            # RAG context
-            try:
-                from app.rag.ingest import retrieve, build_context_block  # noqa: PLC0415
-
-                hits = retrieve(project_id, goal, limit=5)
-                context = build_context_block(hits) or None
-            except Exception:  # noqa: BLE001 - retrieval is best-effort
-                context = None
-
-            # Project memory
-            try:
-                pm = get_project_memory(db, project_id)
-                if pm:
-                    project_memory = "\n".join(f"[{m.category}] {m.title}\n{m.content}" for m in pm)
-            except Exception:  # noqa: BLE001 - memory is best-effort
-                project_memory = None
-
-            # Agent memory per role (pipeline agents only)
-            try:
-                for agent in pipeline_agents:
-                    mem = get_agent_memory(db, agent.id)
-                    if mem:
-                        agent_memory_map[agent.role] = "\n".join(
-                            f"[{m.kind}] {m.content}" for m in mem
-                        )
-            except Exception:  # noqa: BLE001 - memory is best-effort
-                agent_memory_map = {}
-
-        result = run_agent_pipeline(
+        final_output = ""
+        for stage in iter_agent_pipeline(
             goal,
-            model_map=model_map,
+            model_map=resolved_map,
             context=context,
             project_memory=project_memory,
             agent_memory_map=agent_memory_map,
-        )
-
-        await websocket.send_json({"type": "pipeline_start"})
-        for stage in result.stages:
+        ):
+            final_output = stage.output or final_output
             await websocket.send_json(
                 {
                     "type": "pipeline_stage",
@@ -231,15 +214,25 @@ async def run_pipeline_ws(websocket):
                     },
                 }
             )
-        await websocket.send_json(
-            {
-                "type": "pipeline_done",
-                "final_output": result.final_output,
-            }
-        )
 
+        # The last stage's output is the pipeline result (mirrors PipelineResult).
+        if project_id:
+            _record_pipeline_history(db, project_id, goal, final_output)
+
+        await websocket.send_json({"type": "pipeline_done", "final_output": final_output})
+
+    except WebSocketDisconnect:
+        return
     except Exception as exc:  # noqa: BLE001
-        await websocket.send_json({"type": "error", "error": str(exc)})
+        try:
+            await websocket.send_json(
+                {"type": "error", "error": f"{type(exc).__name__}: {exc}"}
+            )
+        except Exception:  # noqa: BLE001 - client already gone
+            return
     finally:
         if db is not None:
-            db.close()
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001
+                pass

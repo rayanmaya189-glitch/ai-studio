@@ -1,1 +1,35 @@
-Nothing needs to be added to .gitignore since only a Python source file was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-error.log*
+
+# Data / volumes
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+qdrant_storage/
+neo4j_data/
+vector_data/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

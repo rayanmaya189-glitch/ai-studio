@@ -57,3 +57,41 @@ def test_run_endpoint_with_project_threads_context(client):
         })
         assert resp.status_code == 200
         assert len(resp.json()["stages"]) == len(PIPELINE_ROLES)
+
+
+def test_run_ws_streams_each_stage_in_order(client):
+    """The /run/ws socket emits pipeline_start, one stage event per role in
+    pipeline order, then pipeline_done with the last stage's output."""
+    with client.websocket_connect("/agents/run/ws") as ws:
+        ws.send_json({"goal": "Add a /healthz endpoint"})
+
+        start = ws.receive_json()
+        assert start["type"] == "pipeline_start"
+        assert start["roles"] == list(PIPELINE_ROLES)
+
+        seen = []
+        final_output = ""
+        while True:
+            msg = ws.receive_json()
+            if msg["type"] == "pipeline_stage":
+                stage = msg["stage"]
+                seen.append(stage["role"])
+                assert stage["model"]
+                assert stage["error"] is None
+                final_output = stage["output"] or final_output
+            elif msg["type"] == "pipeline_done":
+                assert msg["final_output"] == final_output
+                break
+            else:  # pragma: no cover - unexpected frame
+                raise AssertionError(f"unexpected frame: {msg}")
+
+        # Stages arrived one per role, in the canonical pipeline order.
+        assert seen == list(PIPELINE_ROLES)
+
+
+def test_run_ws_missing_goal_errors(client):
+    with client.websocket_connect("/agents/run/ws") as ws:
+        ws.send_json({"project_id": None})
+        msg = ws.receive_json()
+        assert msg["type"] == "error"
+        assert "goal" in msg["error"].lower()

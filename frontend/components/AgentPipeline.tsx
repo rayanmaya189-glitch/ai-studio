@@ -1,31 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type AgentStage } from "@/lib/api";
+import { pipelineRunWsUrl } from "@/lib/pipelineWs";
 
 // The fixed pipeline order, used to render placeholder rows while a run is in
-// flight so the user sees the chain before any stage returns.
+// flight so the user sees the chain before any stage returns. The backend sends
+// the authoritative order in the `pipeline_start` event; this is the fallback.
 const ROLES = ["planner", "architect", "coding", "review", "testing"] as const;
 
 /**
- * Drives the autonomous Planner→Architect→Coding→Review→Testing pipeline (F11):
- * sends a goal to POST /agents/run and renders each stage's output, the model
- * that produced it, and any per-stage error.
+ * Drives the autonomous Planner→Architect→Coding→Review→Testing pipeline (F11).
+ *
+ * Streams over the `/agents/run/ws` WebSocket so each stage's output appears the
+ * moment that stage finishes, rather than blocking on the whole chain. If the
+ * socket can't be opened, it falls back to the synchronous POST /agents/run.
  */
 export default function AgentPipeline({ projectId }: { projectId: string | null }) {
   const [goal, setGoal] = useState("");
   const [stages, setStages] = useState<AgentStage[]>([]);
+  const [roles, setRoles] = useState<readonly string[]>(ROLES);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  async function run(e: React.FormEvent) {
-    e.preventDefault();
-    if (!goal.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    setStages([]);
+  // Tear down any open socket if the component unmounts mid-run.
+  useEffect(() => {
+    return () => wsRef.current?.close();
+  }, []);
+
+  // Synchronous fallback used when the WebSocket fails to open at all.
+  async function runViaRest(trimmed: string) {
     try {
-      const res = await api.runAgents(goal.trim(), projectId ?? undefined);
+      const res = await api.runAgents(trimmed, projectId ?? undefined);
       setStages(res.stages);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Pipeline run failed");
@@ -33,6 +40,80 @@ export default function AgentPipeline({ projectId }: { projectId: string | null 
       setBusy(false);
     }
   }
+
+  function run(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = goal.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError(null);
+    setStages([]);
+    setRoles(ROLES);
+
+    let opened = false;
+    let finished = false;
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(pipelineRunWsUrl());
+    } catch {
+      void runViaRest(trimmed);
+      return;
+    }
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      opened = true;
+      ws.send(JSON.stringify({ goal: trimmed, project_id: projectId ?? null }));
+    };
+
+    ws.onmessage = (event) => {
+      let msg: {
+        type: string;
+        roles?: string[];
+        stage?: AgentStage;
+        error?: string;
+      };
+      try {
+        msg = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (msg.type === "pipeline_start" && msg.roles?.length) {
+        setRoles(msg.roles);
+      } else if (msg.type === "pipeline_stage" && msg.stage) {
+        setStages((prev) => [...prev, msg.stage as AgentStage]);
+      } else if (msg.type === "pipeline_done") {
+        finished = true;
+        setBusy(false);
+        ws.close();
+      } else if (msg.type === "error") {
+        finished = true;
+        setError(msg.error ?? "Pipeline run failed");
+        setBusy(false);
+        ws.close();
+      }
+    };
+
+    ws.onerror = () => {
+      // Never opened → fall back to REST. Mid-stream failure → surface it.
+      if (!opened) {
+        void runViaRest(trimmed);
+      } else if (!finished) {
+        setError("WebSocket connection failed mid-run");
+        setBusy(false);
+      }
+    };
+
+    ws.onclose = () => {
+      wsRef.current = null;
+      // Closed before any terminal event (and after opening): stop the spinner.
+      if (opened && !finished) setBusy(false);
+    };
+  }
+
+  // Roles still awaiting a result: everything after the ones already returned.
+  const pendingRoles = busy ? roles.slice(stages.length) : [];
 
   return (
     <div className="flex h-full flex-col rounded-lg border border-neutral-800">
@@ -65,14 +146,14 @@ export default function AgentPipeline({ projectId }: { projectId: string | null 
           </p>
         )}
 
-        {/* While running, show the ordered roles as pending placeholders. */}
-        {busy &&
-          ROLES.map((role) => (
-            <StageCard key={role} role={role} pending />
-          ))}
-
+        {/* Completed stages stream in live as each one finishes. */}
         {stages.map((s, i) => (
           <StageCard key={i} stage={s} role={s.role} />
+        ))}
+
+        {/* Roles not yet returned show as pending placeholders while running. */}
+        {pendingRoles.map((role) => (
+          <StageCard key={role} role={role} pending />
         ))}
       </div>
     </div>
