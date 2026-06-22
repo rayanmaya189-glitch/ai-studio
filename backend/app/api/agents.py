@@ -4,6 +4,7 @@ On first request the seven PRD agent roles are seeded without default models.
 Models must be assigned via the LLM Config page or the PUT endpoint. Each role
 can be independently reassigned to any provider/model.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -54,11 +55,7 @@ def _seed_if_empty(db: Session) -> None:
 @router.get("", response_model=list[AgentOut])
 def list_agents(db: Session = Depends(get_db)) -> list[Agent]:
     _seed_if_empty(db)
-    return list(
-        db.scalars(
-            select(Agent).where(Agent.project_id.is_(None)).order_by(Agent.role)
-        )
-    )
+    return list(db.scalars(select(Agent).where(Agent.project_id.is_(None)).order_by(Agent.role)))
 
 
 @router.put("/{agent_id}/model", response_model=AgentOut)
@@ -100,9 +97,7 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         try:
             pm = get_project_memory(db, payload.project_id)
             if pm:
-                project_memory = "\n".join(
-                    f"[{m.category}] {m.title}\n{m.content}" for m in pm
-                )
+                project_memory = "\n".join(f"[{m.category}] {m.title}\n{m.content}" for m in pm)
         except Exception:  # noqa: BLE001 - memory is best-effort
             project_memory = None
 
@@ -111,9 +106,7 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
             for agent in pipeline_agents:
                 mem = get_agent_memory(db, agent.id)
                 if mem:
-                    agent_memory_map[agent.role] = "\n".join(
-                        f"[{m.kind}] {m.content}" for m in mem
-                    )
+                    agent_memory_map[agent.role] = "\n".join(f"[{m.kind}] {m.content}" for m in mem)
         except Exception:  # noqa: BLE001 - memory is best-effort
             agent_memory_map = {}
 
@@ -179,3 +172,74 @@ async def run_pipeline_ws(websocket):
         from app.models import Agent  # local import to keep websocket light
 
         db = next(get_db())
+        pipeline_agents = list(db.scalars(select(Agent).where(Agent.project_id.is_(None))))
+        model_map = model_map or {a.role: a.model for a in pipeline_agents}
+
+        # Retrieve RAG + memories (best-effort — failures yield none).
+        context = None
+        project_memory = None
+        agent_memory_map: dict[str, str] = {}
+
+        if project_id:
+            # RAG context
+            try:
+                from app.rag.ingest import retrieve, build_context_block  # noqa: PLC0415
+
+                hits = retrieve(project_id, goal, limit=5)
+                context = build_context_block(hits) or None
+            except Exception:  # noqa: BLE001 - retrieval is best-effort
+                context = None
+
+            # Project memory
+            try:
+                pm = get_project_memory(db, project_id)
+                if pm:
+                    project_memory = "\n".join(f"[{m.category}] {m.title}\n{m.content}" for m in pm)
+            except Exception:  # noqa: BLE001 - memory is best-effort
+                project_memory = None
+
+            # Agent memory per role (pipeline agents only)
+            try:
+                for agent in pipeline_agents:
+                    mem = get_agent_memory(db, agent.id)
+                    if mem:
+                        agent_memory_map[agent.role] = "\n".join(
+                            f"[{m.kind}] {m.content}" for m in mem
+                        )
+            except Exception:  # noqa: BLE001 - memory is best-effort
+                agent_memory_map = {}
+
+        result = run_agent_pipeline(
+            goal,
+            model_map=model_map,
+            context=context,
+            project_memory=project_memory,
+            agent_memory_map=agent_memory_map,
+        )
+
+        await websocket.send_json({"type": "pipeline_start"})
+        for stage in result.stages:
+            await websocket.send_json(
+                {
+                    "type": "pipeline_stage",
+                    "stage": {
+                        "role": stage.role,
+                        "provider": stage.provider,
+                        "model": stage.model,
+                        "output": stage.output,
+                        "error": stage.error,
+                    },
+                }
+            )
+        await websocket.send_json(
+            {
+                "type": "pipeline_done",
+                "final_output": result.final_output,
+            }
+        )
+
+    except Exception as exc:  # noqa: BLE001
+        await websocket.send_json({"type": "error", "error": str(exc)})
+    finally:
+        if db is not None:
+            db.close()
