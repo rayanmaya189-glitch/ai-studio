@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,9 +15,29 @@ from app.schemas import ProjectCreate, ProjectOut
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+def _normalize_project_root(root_path: str) -> str:
+    try:
+        resolved = Path(root_path).expanduser().resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=f"Project path does not exist: {root_path}") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid project path: {exc}") from exc
+
+    if not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"Project path is not a directory: {resolved}")
+
+    return str(resolved)
+
+
 @router.post("", response_model=ProjectOut)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Project:
-    project = Project(name=payload.name, root_path=payload.root_path)
+    normalized_root = _normalize_project_root(payload.root_path)
+
+    existing = db.scalar(select(Project).where(Project.root_path == normalized_root))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="A project for this folder already exists")
+
+    project = Project(name=payload.name, root_path=normalized_root)
     db.add(project)
     db.commit()
     db.refresh(project)

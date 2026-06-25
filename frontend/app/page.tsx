@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type Project } from "@/lib/api";
+import { api, type Project, type SystemStatusOut } from "@/lib/api";
 import FsBrowser from "@/components/FsBrowser";
 
 export default function ProjectsPage() {
@@ -13,6 +13,7 @@ export default function ProjectsPage() {
   const [showFsBrowser, setShowFsBrowser] = useState(false);
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [status, setStatus] = useState<SystemStatusOut | null>(null);
 
   async function refresh() {
     try {
@@ -24,6 +25,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     refresh();
+    api.ready().then(setStatus).catch(() => {});
   }, []);
 
   async function onCreate(e: React.FormEvent) {
@@ -79,6 +81,28 @@ export default function ProjectsPage() {
             <p className="text-sm text-neutral-400">
               Multi-agent software engineering platform with RAG, code graphs, and autonomous pipelines.
             </p>
+          </div>
+        </div>
+
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            status?.ready
+              ? "border-emerald-900/60 bg-emerald-950/30 text-emerald-200"
+              : "border-amber-900/60 bg-amber-950/30 text-amber-100"
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-medium">
+                {status?.ready ? "System ready" : "System degraded"}
+              </div>
+              <div className="text-xs opacity-80">
+                {status
+                  ? `${status.service} · db ${status.database} · ${status.providers_enabled} provider(s) enabled`
+                  : "Checking runtime status..."}
+              </div>
+            </div>
+            {status?.detail && <div className="max-w-xl text-xs opacity-80">{status.detail}</div>}
           </div>
         </div>
 

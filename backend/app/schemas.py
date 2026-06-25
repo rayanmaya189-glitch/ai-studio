@@ -26,6 +26,16 @@ class ProjectOut(ORMModel):
     created_at: datetime
 
 
+class SystemStatusOut(BaseModel):
+    status: str
+    service: str
+    version: str
+    database: str
+    providers_enabled: int
+    ready: bool
+    detail: str | None = None
+
+
 # ---- Scan (F2/F4) ----
 class ScanResult(BaseModel):
     project_id: str

@@ -17,6 +17,7 @@ from app.api import (
     projects,
     providers,
     pull_requests,
+    system,
     rag,
     scan,
     tasks,
@@ -54,6 +55,7 @@ for router in (
     llm_config,
     edit,
     pull_requests,
+    system,
     memory,
     fs,
 ):

@@ -256,6 +256,16 @@ export interface AgentPrivateMemoryEntry {
   created_at: string;
 }
 
+export interface SystemStatusOut {
+  status: string;
+  service: string;
+  version: string;
+  database: string;
+  providers_enabled: number;
+  ready: boolean;
+  detail: string | null;
+}
+
 export const api = {
   // ---- Filesystem browser ----
   fsList: (path?: string, show_hidden = false, include_files = true) => {
@@ -328,6 +338,9 @@ export const api = {
 
   // ---- Providers ----
   providers: () => http<ProviderInfo[]>("/providers"),
+
+  // ---- System status ----
+  ready: () => http<SystemStatusOut>("/ready"),
 
   // ---- LLM config ----
   getLlmConfig: () => http<LLMConfigOut>("/llm-config"),
