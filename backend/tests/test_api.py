@@ -183,3 +183,108 @@ def test_agent_memory_crud(client):
 def test_agent_memory_unknown_agent_404(client):
     resp = client.get("/agents/does-not-exist/memory")
     assert resp.status_code == 404
+
+
+# ---- Phase 2: file read, OCR, git-backed PR, documentation stage ----
+
+
+def test_edit_read_file(client):
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "hello.py"), "w") as f:
+            f.write("print('hi')\n")
+        pid = client.post("/projects", json={"name": "read", "root_path": d}).json()["id"]
+
+        resp = client.get(f"/edit/{pid}/file", params={"path": "hello.py"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "print('hi')" in body["content"]
+        assert body["truncated"] is False
+
+
+def test_edit_read_file_missing_404(client):
+    with tempfile.TemporaryDirectory() as d:
+        pid = client.post("/projects", json={"name": "read", "root_path": d}).json()["id"]
+        resp = client.get(f"/edit/{pid}/file", params={"path": "nope.py"})
+        assert resp.status_code == 404
+
+
+def test_edit_read_file_blocks_traversal(client):
+    with tempfile.TemporaryDirectory() as d:
+        pid = client.post("/projects", json={"name": "read", "root_path": d}).json()["id"]
+        resp = client.get(f"/edit/{pid}/file", params={"path": "../../etc/passwd"})
+        assert resp.status_code == 400
+
+
+def test_ocr_endpoint(client):
+    resp = client.post(
+        "/agents/ocr",
+        json={"content": "Invoice total: $42", "instruction": "extract"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["provider"] == "test"
+    assert isinstance(body["output"], str)
+
+
+def test_pipeline_documentation_stage_runs(client):
+    resp = client.post("/agents/run", json={"goal": "add a feature"})
+    assert resp.status_code == 200
+    roles = [s["role"] for s in resp.json()["stages"]]
+    assert roles == ["planner", "architect", "coding", "review", "testing", "documentation"]
+
+
+def test_pipeline_roles_subset(client):
+    resp = client.post("/agents/run", json={"goal": "x", "roles": ["planner", "coding"]})
+    assert resp.status_code == 200
+    roles = [s["role"] for s in resp.json()["stages"]]
+    assert roles == ["planner", "coding"]
+
+
+def test_git_status_non_repo(client):
+    with tempfile.TemporaryDirectory() as d:
+        pid = client.post("/projects", json={"name": "g", "root_path": d}).json()["id"]
+        resp = client.get(f"/projects/{pid}/git/status")
+        assert resp.status_code == 200
+        assert resp.json()["is_git_repo"] is False
+
+
+def test_pull_request_commit_on_real_repo(client):
+    import subprocess
+
+    with tempfile.TemporaryDirectory() as d:
+        # Initialise a real git repo with one committed file.
+        subprocess.run(["git", "-C", d, "init", "-q"], check=True)
+        subprocess.run(["git", "-C", d, "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "-C", d, "config", "user.name", "t"], check=True)
+        with open(os.path.join(d, "README.md"), "w") as f:
+            f.write("# base\n")
+        subprocess.run(["git", "-C", d, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", d, "commit", "-q", "-m", "base"], check=True)
+
+        pid = client.post("/projects", json={"name": "pr", "root_path": d}).json()["id"]
+
+        resp = client.post(
+            f"/projects/{pid}/pull-requests/commit",
+            json={
+                "title": "Add feature x",
+                "summary_goal": "implement x",
+                "branch": "feature-x",
+                "edits": [{"path": "feature.py", "content": "x = 1\n"}],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["branch"] == "ads/feature-x"
+        assert "feature.py" in body["files_changed"]
+        assert body["commit"]
+        assert "feature.py" in body["diff"]
+
+
+def test_pull_request_commit_rejects_non_repo(client):
+    with tempfile.TemporaryDirectory() as d:
+        pid = client.post("/projects", json={"name": "pr", "root_path": d}).json()["id"]
+        resp = client.post(
+            f"/projects/{pid}/pull-requests/commit",
+            json={"title": "x", "edits": [{"path": "a.py", "content": "1\n"}]},
+        )
+        assert resp.status_code == 400

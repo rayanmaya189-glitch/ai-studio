@@ -142,7 +142,14 @@ def run_grounded_chat(
 # The ordered stages and the system prompt that frames each role. The pipeline
 # always runs in this order; each stage sees the goal, the RAG context, and the
 # concatenated output of every prior stage.
-PIPELINE_ROLES: tuple[str, ...] = ("planner", "architect", "coding", "review", "testing")
+PIPELINE_ROLES: tuple[str, ...] = (
+    "planner",
+    "architect",
+    "coding",
+    "review",
+    "testing",
+    "documentation",
+)
 
 _ROLE_PROMPTS: dict[str, str] = {
     "planner": (
@@ -165,6 +172,11 @@ _ROLE_PROMPTS: dict[str, str] = {
     "testing": (
         "You are the Testing agent. Propose tests that verify the implementation "
         "and the review's concerns are addressed. Describe each test's intent."
+    ),
+    "documentation": (
+        "You are the Documentation agent. Using the plan, the implemented code, and "
+        "the tests, write clear documentation for the change: a short summary, the "
+        "affected files/interfaces, usage examples, and a changelog entry."
     ),
 }
 
@@ -248,21 +260,42 @@ def _make_node(role: str):
     return node
 
 
-def _build_graph():
+def _build_graph(roles: tuple[str, ...]):
     builder = StateGraph(_PipelineState)
-    for role in PIPELINE_ROLES:
+    for role in roles:
         builder.add_node(role, _make_node(role))
 
-    builder.add_edge(START, PIPELINE_ROLES[0])
-    for src, dst in zip(PIPELINE_ROLES, PIPELINE_ROLES[1:], strict=False):
+    builder.add_edge(START, roles[0])
+    for src, dst in zip(roles, roles[1:], strict=False):
         builder.add_edge(src, dst)
-    builder.add_edge(PIPELINE_ROLES[-1], END)
+    builder.add_edge(roles[-1], END)
     return builder.compile()
 
 
-# Compiled once at import; the graph is stateless across invocations (state is
-# passed in per call), so a single compiled instance is safe to reuse.
-_GRAPH = _build_graph()
+# Compiled graphs are cached per role-tuple; the graph is stateless across
+# invocations (state is passed in per call), so reuse is safe.
+_GRAPH_CACHE: dict[tuple[str, ...], object] = {}
+
+
+def _resolve_roles(roles: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    """Validate + order requested roles, defaulting to the full pipeline."""
+    if not roles:
+        return PIPELINE_ROLES
+    requested = {r for r in roles if r in _ROLE_PROMPTS}
+    ordered = tuple(r for r in PIPELINE_ROLES if r in requested)
+    return ordered or PIPELINE_ROLES
+
+
+def _get_graph(roles: tuple[str, ...]):
+    graph = _GRAPH_CACHE.get(roles)
+    if graph is None:
+        graph = _build_graph(roles)
+        _GRAPH_CACHE[roles] = graph
+    return graph
+
+
+# Pre-compile the default full pipeline at import.
+_GRAPH = _get_graph(PIPELINE_ROLES)
 
 
 def run_agent_pipeline(
@@ -271,13 +304,17 @@ def run_agent_pipeline(
     context: str | None = None,
     project_memory: str | None = None,
     agent_memory_map: dict[str, str] | None = None,
+    roles: list[str] | None = None,
 ) -> PipelineResult:
-    """Run the Planner->Architect->Coding->Review->Testing chain for one goal.
+    """Run the Planner->Architect->Coding->Review->Testing->Documentation chain.
 
     ``model_map`` maps a role name to its ``"<provider>:<model>"`` ref (from the
     Agent table). Missing roles fall back to the configured default model.
+    ``roles`` optionally selects/limits which stages run (default: full pipeline);
+    unknown roles are ignored and ordering follows :data:`PIPELINE_ROLES`.
     """
-    final = _GRAPH.invoke(
+    graph = _get_graph(_resolve_roles(roles))
+    final = graph.invoke(
         {
             "goal": goal,
             "context": context or "",
@@ -296,6 +333,7 @@ def iter_agent_pipeline(
     context: str | None = None,
     project_memory: str | None = None,
     agent_memory_map: dict[str, str] | None = None,
+    roles: list[str] | None = None,
 ) -> Iterator[StageResult]:
     """Stream the pipeline, yielding each ``StageResult`` as its stage completes.
 
@@ -313,7 +351,7 @@ def iter_agent_pipeline(
         "model_map": model_map or {},
         "stages": [],
     }
-    for role in PIPELINE_ROLES:
+    for role in _resolve_roles(roles):
         result = _run_stage(role, state)
         state["stages"].append(result)
         yield result

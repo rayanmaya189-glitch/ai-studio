@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents.graph import PIPELINE_ROLES, iter_agent_pipeline, run_agent_pipeline
+from app.agents.graph import _resolve_roles, iter_agent_pipeline, run_agent_pipeline
 from app.db import get_db
 from app.memory.store import (
     add_agent_memory,
@@ -20,12 +20,16 @@ from app.memory.store import (
     get_project_memory,
 )
 from app.models import Agent
+from app.providers.base import ChatMessage
+from app.providers.registry import get_registry
 from app.rag.ingest import build_context_block, retrieve
 from app.schemas import (
     AgentModelUpdate,
     AgentOut,
     AgentRunRequest,
     AgentRunResponse,
+    OcrRequest,
+    OcrResponse,
     StageOut,
 )
 
@@ -76,6 +80,48 @@ def set_agent_model(
     return agent
 
 
+_OCR_SYSTEM_PROMPT = (
+    "You are the OCR / document-extraction agent. Given text extracted from a "
+    "document or a description of a diagram, produce clean, structured output: "
+    "extract entities, relationships, and key facts as well-formatted markdown. "
+    "Do not invent content that is not present in the input."
+)
+
+
+@router.post("/ocr", response_model=OcrResponse)
+def run_ocr(payload: OcrRequest, db: Session = Depends(get_db)) -> OcrResponse:
+    """Run the OCR/document-extraction agent on already-extracted text (F5 OCR).
+
+    OCR is vision work and runs as its own endpoint, separate from the dev
+    pipeline. This text-in path lets the OCR agent structure extracted document
+    text now; raw-image vision input is a follow-up needing a vision provider.
+    """
+    _seed_if_empty(db)
+    model_ref = payload.model
+    if not model_ref:
+        ocr_agent = db.scalar(
+            select(Agent).where(Agent.project_id.is_(None), Agent.role == "ocr")
+        )
+        model_ref = ocr_agent.model if ocr_agent and ocr_agent.model else None
+
+    registry = get_registry()
+    try:
+        provider, model = registry.resolve(model_ref)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    messages = [
+        ChatMessage(role="system", content=_OCR_SYSTEM_PROMPT),
+        ChatMessage(role="user", content=f"{payload.instruction}\n\n---\n{payload.content}"),
+    ]
+    try:
+        output = provider.chat(messages, model)
+    except Exception as exc:  # noqa: BLE001 - surface provider failure cleanly
+        raise HTTPException(status_code=502, detail=f"OCR provider failed: {exc}") from exc
+
+    return OcrResponse(provider=provider.name, model=model, output=output)
+
+
 @router.post("/run", response_model=AgentRunResponse)
 def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> AgentRunResponse:
     """Run the autonomous Planner->Architect->Coding->Review->Testing chain (F11)."""
@@ -89,6 +135,7 @@ def run_pipeline(payload: AgentRunRequest, db: Session = Depends(get_db)) -> Age
         context=context,
         project_memory=project_memory,
         agent_memory_map=agent_memory_map,
+        roles=payload.roles,
     )
 
     # Write each stage back to its own agent's private memory, then record the
@@ -225,6 +272,7 @@ async def run_pipeline_ws(websocket: WebSocket) -> None:
         goal = payload.get("goal")
         project_id = payload.get("project_id")
         model_map = payload.get("model_map") or None
+        roles = payload.get("roles") or None
 
         if not goal:
             await websocket.send_json({"type": "error", "error": "Missing goal"})
@@ -235,7 +283,8 @@ async def run_pipeline_ws(websocket: WebSocket) -> None:
             db, goal, project_id, model_map
         )
 
-        await websocket.send_json({"type": "pipeline_start", "roles": list(PIPELINE_ROLES)})
+        active_roles = _resolve_roles(roles)
+        await websocket.send_json({"type": "pipeline_start", "roles": list(active_roles)})
 
         agent_ids = _pipeline_agent_ids(db)
         final_output = ""
@@ -245,6 +294,7 @@ async def run_pipeline_ws(websocket: WebSocket) -> None:
             context=context,
             project_memory=project_memory,
             agent_memory_map=agent_memory_map,
+            roles=roles,
         ):
             final_output = stage.output or final_output
             # Write-during-run: persist each stage to its agent's memory as soon

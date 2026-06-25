@@ -132,6 +132,8 @@ class AgentRunRequest(BaseModel):
     # Optional per-role "<provider>:<model>" overrides; unset roles use the
     # models assigned in the Agent table (or the configured default).
     model_map: dict[str, str] | None = None
+    # Optional subset of pipeline roles to run (default: full pipeline).
+    roles: list[str] | None = None
 
 
 class StageOut(BaseModel):
@@ -146,6 +148,21 @@ class AgentRunResponse(BaseModel):
     goal: str
     stages: list[StageOut]
     final_output: str
+
+
+# ---- OCR / document extraction agent (F5 OCR role) ----
+class OcrRequest(BaseModel):
+    # Text extracted from a document or a description of a diagram. (Raw-image
+    # vision input is a follow-up that requires a vision-capable provider.)
+    content: str
+    instruction: str = "Extract the key facts, entities, and structure as clean markdown."
+    model: str | None = None  # "<provider>:<model>" override; default = OCR agent's model
+
+
+class OcrResponse(BaseModel):
+    provider: str
+    model: str
+    output: str
 
 
 # ---- Tasks (F9) ----
@@ -221,6 +238,13 @@ class EditApplyResponse(BaseModel):
     errors: list[str] = []
 
 
+class FileReadResponse(BaseModel):
+    path: str
+    content: str
+    size_bytes: int
+    truncated: bool = False
+
+
 # ---- Pull request generator (F13) ----
 class PullRequestGenerateRequest(BaseModel):
     title: str
@@ -235,6 +259,39 @@ class PullRequestGenerateResponse(BaseModel):
     provider: str
     model: str
     description: str
+
+
+# ---- Git-backed pull request (F13) ----
+class PullRequestCommitRequest(BaseModel):
+    title: str
+    summary_goal: str = ""
+    # Branch to create/switch to before committing. Defaults to a generated name.
+    branch: str | None = None
+    commit_message: str | None = None
+    # File edits to write + commit (relative paths under the project root).
+    edits: list[FileEdit] = []
+    # Optional "<provider>:<model>" override for the description LLM call.
+    model: str | None = None
+    # When false, skip the LLM description (useful when no provider is enabled).
+    generate_description: bool = True
+
+
+class PullRequestCommitResponse(BaseModel):
+    project_id: str
+    branch: str
+    base_branch: str
+    commit: str | None = None
+    files_changed: list[str] = []
+    diff: str
+    description: str = ""
+    provider: str | None = None
+    model: str | None = None
+
+
+class GitStatusResponse(BaseModel):
+    is_git_repo: bool
+    branch: str | None = None
+    detail: str | None = None
 
 
 class ProviderInfo(BaseModel):

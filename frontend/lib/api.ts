@@ -155,6 +155,31 @@ export interface EditApplyResponse {
   errors: string[];
 }
 
+export interface FileReadResponse {
+  path: string;
+  content: string;
+  size_bytes: number;
+  truncated: boolean;
+}
+
+export interface GitStatusResponse {
+  is_git_repo: boolean;
+  branch?: string | null;
+  detail?: string | null;
+}
+
+export interface PullRequestCommitResponse {
+  project_id: string;
+  branch: string;
+  base_branch: string;
+  commit: string | null;
+  files_changed: string[];
+  diff: string;
+  description: string;
+  provider: string | null;
+  model: string | null;
+}
+
 export interface PullRequestGenerateRequest {
   title: string;
   summary_goal: string;
@@ -326,6 +351,11 @@ export const api = {
       body: JSON.stringify({ edits }),
     }),
 
+  readFile: (projectId: string, path: string) =>
+    http<FileReadResponse>(
+      `/edit/${projectId}/file?path=${encodeURIComponent(path)}`,
+    ),
+
   // ---- Pull requests ----
   generatePullRequest: (projectId: string, title: string, summary_goal: string, model?: string | null) =>
     http<PullRequestGenerateResponse>(
@@ -334,6 +364,26 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ title, summary_goal, model: model ?? null }),
       },
+    ),
+
+  gitStatus: (projectId: string) =>
+    http<GitStatusResponse>(`/projects/${projectId}/git/status`),
+
+  commitPullRequest: (
+    projectId: string,
+    payload: {
+      title: string;
+      summary_goal?: string;
+      branch?: string | null;
+      commit_message?: string | null;
+      edits: FileEdit[];
+      model?: string | null;
+      generate_description?: boolean;
+    },
+  ) =>
+    http<PullRequestCommitResponse>(
+      `/projects/${projectId}/pull-requests/commit`,
+      { method: "POST", body: JSON.stringify(payload) },
     ),
 
   // ---- Providers ----
