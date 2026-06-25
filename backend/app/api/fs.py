@@ -62,7 +62,9 @@ def list_dir(
                     continue
                 if not is_dir and not include_files:
                     continue
-                entries.append(FsEntry(name=name, path=str(Path(entry.path).resolve()), is_dir=is_dir))
+                entries.append(
+                    FsEntry(name=name, path=str(Path(entry.path).resolve()), is_dir=is_dir)
+                )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=f"Permission denied: {target}") from exc
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
 
@@ -243,9 +244,6 @@ class ProviderInfo(BaseModel):
 
 
 # ---- LLM Config (DB-backed) ----
-from enum import Enum
-
-
 class ProviderName(str, Enum):
     openrouter = "openrouter"
     openai = "openai"

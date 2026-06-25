@@ -146,9 +146,7 @@ def _build_pipeline_inputs(
             for agent in pipeline_agents:
                 mem = get_agent_memory(db, agent.id)
                 if mem:
-                    agent_memory_map[agent.role] = "\n".join(
-                        f"[{m.kind}] {m.content}" for m in mem
-                    )
+                    agent_memory_map[agent.role] = "\n".join(f"[{m.kind}] {m.content}" for m in mem)
         except Exception:  # noqa: BLE001 - memory is best-effort
             agent_memory_map = {}
 
@@ -173,10 +171,7 @@ def _record_pipeline_history(db: Session, project_id: str, goal: str, final_outp
 
 def _pipeline_agent_ids(db: Session) -> dict[str, str]:
     """Map each global pipeline role to its Agent id (for write-back memory)."""
-    return {
-        a.role: a.id
-        for a in db.scalars(select(Agent).where(Agent.project_id.is_(None)))
-    }
+    return {a.role: a.id for a in db.scalars(select(Agent).where(Agent.project_id.is_(None)))}
 
 
 def _record_stage_memory(
@@ -280,9 +275,7 @@ async def run_pipeline_ws(websocket: WebSocket) -> None:
         return
     except Exception as exc:  # noqa: BLE001
         try:
-            await websocket.send_json(
-                {"type": "error", "error": f"{type(exc).__name__}: {exc}"}
-            )
+            await websocket.send_json({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
         except Exception:  # noqa: BLE001 - client already gone
             return
     finally:

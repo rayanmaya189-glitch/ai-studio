@@ -7,8 +7,8 @@ scored retrieval, project isolation, and re-ingest replacement.
 
 from __future__ import annotations
 
+from app.providers.base import ChatMessage, LLMProvider
 from app.providers.registry import get_registry
-from app.providers.base import LLMProvider, ChatMessage
 from app.rag.chunking import chunk_document
 from app.rag.ingest import ingest_project, retrieve
 from app.rag.vector_store import LocalStore
@@ -16,13 +16,18 @@ from app.rag.vector_store import LocalStore
 
 class _RagTestProvider(LLMProvider):
     """Local test provider for RAG tests that create their own provider context."""
+
     name = "test"
+
     def available(self) -> bool:
         return True
+
     def list_models(self) -> list[str]:
         return ["test-model"]
+
     def chat(self, messages: list[ChatMessage], model: str) -> str:
         return "ok"
+
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
         return [[0.0] * 64 for _ in texts]
 

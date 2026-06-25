@@ -17,25 +17,30 @@ from app.api import (
     projects,
     providers,
     pull_requests,
-    system,
     rag,
     scan,
+    system,
     tasks,
 )
 from app.config import settings
 from app.db import init_db
+from app.logging_config import configure_logging
+from app.middleware import RequestContextMiddleware
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Dev convenience: create tables on startup. Replace with Alembic migrations
-    # before the schema is considered stable.
+    configure_logging()
+    # Zero-config/dev/test path: create tables on startup. Postgres deployments
+    # should run `alembic upgrade head` instead (create_all is a no-op once the
+    # schema already exists).
     init_db()
     yield
 
 
 app = FastAPI(title="AI Development Studio", version="0.1.0", lifespan=lifespan)
 
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,

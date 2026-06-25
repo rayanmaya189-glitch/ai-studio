@@ -1,0 +1,13 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.db
+*.sqlite
+*.sqlite3
+vector_data/
+.env
+.env.local
+*.local

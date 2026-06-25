@@ -1,7 +1,13 @@
 """Database engine and session management (SQLAlchemy 2.0).
 
-For dev simplicity we call ``Base.metadata.create_all`` on startup instead of
-running migrations. Introduce Alembic before any schema is considered stable.
+Two schema paths coexist:
+
+* **Zero-config / dev / tests** — ``init_db()`` calls ``Base.metadata.create_all``
+  on startup (plus the legacy idempotent column adds below). This keeps a fresh
+  SQLite clone runnable with no migration step.
+* **Production (Postgres)** — run ``alembic upgrade head`` (see ``alembic/``).
+  ``create_all`` is a no-op once the schema exists, so the two are compatible;
+  Alembic is the source of truth for schema evolution going forward.
 """
 
 from __future__ import annotations

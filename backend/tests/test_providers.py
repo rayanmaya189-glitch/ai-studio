@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import pytest
-from app.providers.base import LLMProvider, ChatMessage
+
+from app.providers.base import ChatMessage, LLMProvider
 from app.providers.registry import ProviderRegistry
 
 
 class TestProvider(LLMProvider):
     """Minimal provider for tests — no network required."""
+
     name = "test"
 
     def available(self) -> bool:

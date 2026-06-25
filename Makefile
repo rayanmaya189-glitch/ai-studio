@@ -1,4 +1,4 @@
-.PHONY: help up down backend frontend backend-build backend-prod frontend-build frontend-prod install-backend install-frontend test fmt
+.PHONY: help up down backend frontend backend-build backend-prod frontend-build frontend-prod install-backend install-frontend test fmt migrate migration app-up app-down
 
 help:
 	@echo "ADS dev/prod shortcuts:"
@@ -14,12 +14,28 @@ help:
 	@echo "  make frontend-prod        run Next.js production server"
 	@echo "  make test                 run backend pytest suite"
 	@echo "  make fmt                  ruff format + check backend"
+	@echo "  make migrate              apply DB migrations (alembic upgrade head)"
+	@echo "  make migration m=\"msg\"   autogenerate a new migration"
+	@echo "  make app-up               start full app stack incl. backend+frontend"
+	@echo "  make app-down             stop full app stack"
 
 up:
 	docker compose up -d postgres qdrant
 
 down:
 	docker compose down
+
+app-up:
+	docker compose --profile app up -d
+
+app-down:
+	docker compose --profile app down
+
+migrate:
+	cd backend && . .venv/bin/activate && alembic upgrade head
+
+migration:
+	cd backend && . .venv/bin/activate && alembic revision --autogenerate -m "$(m)"
 
 install-backend:
 	cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt

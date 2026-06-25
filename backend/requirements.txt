@@ -10,6 +10,12 @@ python-dotenv==1.0.1
 tree-sitter==0.24.0
 tree-sitter-language-pack==1.8.0
 langgraph==0.2.60
+alembic==1.14.0
+
+# security (auth + encrypted secrets); all optional at runtime
+cryptography==44.0.0
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
 
 # dev/test
 pytest==8.3.4

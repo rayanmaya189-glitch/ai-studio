@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 
@@ -22,15 +22,16 @@ os.environ["DEFAULT_EMBED_MODEL"] = "test:test-model"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.db import init_db, SessionLocal  # noqa: E402
+from app.db import SessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import LLMProviderConfig  # noqa: E402
-from app.providers.base import LLMProvider, ChatMessage  # noqa: E402
+from app.providers.base import ChatMessage, LLMProvider  # noqa: E402
 from app.providers.registry import get_registry, reset_registry  # noqa: E402
 
 
 class TestProvider(LLMProvider):
     """Minimal test provider — no network required."""
+
     name = "test"
 
     def available(self) -> bool:

@@ -136,9 +136,7 @@ def update_project_agent(
 
 
 @router.delete("/{agent_id}")
-def delete_project_agent(
-    project_id: str, agent_id: str, db: Session = Depends(get_db)
-) -> dict:
+def delete_project_agent(project_id: str, agent_id: str, db: Session = Depends(get_db)) -> dict:
     agent = _require_custom_agent(db, project_id, agent_id)
     db.delete(agent)
     db.commit()
@@ -200,7 +198,10 @@ def chat_with_project_agent(
         rows = list(
             db.scalars(
                 select(Conversation)
-                .where(Conversation.project_id == project_id, Conversation.model == f"agent:{agent_id}")
+                .where(
+                    Conversation.project_id == project_id,
+                    Conversation.model == f"agent:{agent_id}",
+                )
                 .order_by(Conversation.created_at.desc())
                 .limit(8)
             )

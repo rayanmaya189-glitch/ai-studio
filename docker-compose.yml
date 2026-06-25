@@ -41,3 +41,31 @@ services:
       - "7687:7687"   # bolt
     volumes:
       - ./neo4j_data:/data
+
+  # Application services — only start with `--profile app` so the default
+  # `docker compose up` still brings up backing services alone.
+  backend:
+    build: ./backend
+    profiles: ["app"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://ads:ads@postgres:5432/ads
+      QDRANT_URL: http://qdrant:6333
+      CORS_ORIGINS: http://localhost:3000
+      # Set APP_SECRET_KEY (and AUTH_ENABLED=true) to enable encrypted keys / auth.
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+    ports:
+      - "8754:8754"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    profiles: ["app"]
+    environment:
+      BACKEND_URL: http://backend:8754
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend

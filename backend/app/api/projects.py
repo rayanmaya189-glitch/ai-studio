@@ -19,7 +19,9 @@ def _normalize_project_root(root_path: str) -> str:
     try:
         resolved = Path(root_path).expanduser().resolve(strict=True)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=400, detail=f"Project path does not exist: {root_path}") from exc
+        raise HTTPException(
+            status_code=400, detail=f"Project path does not exist: {root_path}"
+        ) from exc
     except OSError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid project path: {exc}") from exc
 
